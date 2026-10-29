@@ -52,6 +52,11 @@
     .dark .sidebar-link:hover { background: #1e293b; }
     .dark .sidebar-link.active { background: rgba(37, 99, 235, 0.2); color: #93c5fd; }
     .dark .sidebar-link.active:hover { background: rgba(37, 99, 235, 0.3); }
+    .sidebar-link.is-locked { display: none; }
+    .is-collapsed { display: none !important; }
+    #app-shell { display: none; }
+    #app-shell.is-on { display: flex; }
+    #login-screen.is-off { display: none; }
 
     .kanban-card {
       cursor: grab;
@@ -105,7 +110,96 @@
     }
   </style>
 </head>
-<body class="bg-slate-50 text-slate-800 antialiased h-screen flex overflow-hidden dark:bg-slate-950 dark:text-slate-100">
+<body class="bg-slate-50 text-slate-800 antialiased h-screen overflow-hidden dark:bg-slate-950 dark:text-slate-100">
+  <div id="login-screen" class="h-full overflow-auto">
+    <div class="min-h-full flex flex-col">
+      <div class="flex items-center justify-between gap-3 px-4 sm:px-8 py-4">
+        <div class="flex items-center gap-3 min-w-0">
+          <div class="w-9 h-9 bg-primary rounded-xl flex items-center justify-center text-white font-bold text-lg shrink-0">P</div>
+          <div class="min-w-0">
+            <div class="font-bold leading-tight">PULSE</div>
+            <div class="text-xs text-slate-500 dark:text-slate-400 truncate">Marshall E. Campbell · demo sign-in</div>
+          </div>
+        </div>
+        <button id="login-theme" type="button" aria-label="Toggle color theme" class="w-9 h-9 shrink-0 rounded-lg border border-slate-200 text-slate-500 hover:bg-white hover:text-slate-700 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100 flex items-center justify-center">
+          <i class="fa-solid fa-moon dark:hidden"></i>
+          <i class="fa-solid fa-sun hidden dark:inline-block"></i>
+        </button>
+      </div>
+      <div class="flex-1 px-4 sm:px-8 pb-10 flex items-center">
+        <div class="max-w-5xl mx-auto grid lg:grid-cols-2 gap-6 items-start">
+          <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 sm:p-8 dark:bg-slate-900 dark:border-slate-800">
+            <h2 class="text-2xl font-bold tracking-tight">Sign in to the counter</h2>
+            <p class="text-sm text-slate-500 dark:text-slate-400 mt-2">Branch book for Port Huron, Saginaw, Lapeer, and Livonia. This is a demo login stored in the browser — not production authentication.</p>
+            <p id="login-notice" class="hidden mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-100" role="status"></p>
+            <form id="login-form" class="mt-6 space-y-3" autocomplete="on">
+              <label class="block">
+                <span class="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Username</span>
+                <input name="username" required autocomplete="username" placeholder="counter.ph" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary dark:bg-slate-800 dark:border-slate-700 dark:text-slate-100 dark:placeholder:text-slate-500" />
+              </label>
+              <label class="block">
+                <span class="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Password</span>
+                <input name="password" type="password" required autocomplete="current-password" placeholder="pulse" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary dark:bg-slate-800 dark:border-slate-700 dark:text-slate-100 dark:placeholder:text-slate-500" />
+              </label>
+              <p id="login-error" class="hidden text-sm text-rose-600 dark:text-rose-300" role="alert"></p>
+              <button type="submit" class="w-full bg-primary hover:bg-blue-700 text-white text-sm font-medium px-4 py-2.5 rounded-lg">Sign in</button>
+            </form>
+            <p class="mt-4 text-[11px] leading-relaxed text-slate-400 dark:text-slate-500">Session sits in localStorage and signs out after 15 minutes without activity. Anyone who can open this page can read that storage. Real auth, row-level branch security, and Stripe are described in <span class="font-medium text-slate-500 dark:text-slate-400">docs/PRODUCTION.md</span>.</p>
+          </div>
+          <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 sm:p-8 dark:bg-slate-900 dark:border-slate-800">
+            <h3 class="font-semibold">Demo accounts</h3>
+            <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">Every account uses the password <code class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-100">pulse</code>. It is written here on purpose. Do not reuse it anywhere real.</p>
+            <div class="mt-4 overflow-x-auto">
+              <table class="w-full text-sm">
+                <thead class="text-left text-xs text-slate-400 dark:text-slate-500">
+                  <tr>
+                    <th class="py-2 pr-3 font-medium">Branch</th>
+                    <th class="py-2 pr-3 font-medium">Code</th>
+                    <th class="py-2 font-medium">Usernames</th>
+                  </tr>
+                </thead>
+                <tbody class="text-slate-700 dark:text-slate-200">
+                  <tr class="border-t border-slate-100 dark:border-slate-800">
+                    <td class="py-2 pr-3">Port Huron</td>
+                    <td class="py-2 pr-3 font-mono text-xs">1000</td>
+                    <td class="py-2 font-mono text-xs">counter.ph · sales.ph · warehouse.ph</td>
+                  </tr>
+                  <tr class="border-t border-slate-100 dark:border-slate-800">
+                    <td class="py-2 pr-3">Saginaw</td>
+                    <td class="py-2 pr-3 font-mono text-xs">2000</td>
+                    <td class="py-2 font-mono text-xs">counter.sg · sales.sg · warehouse.sg</td>
+                  </tr>
+                  <tr class="border-t border-slate-100 dark:border-slate-800">
+                    <td class="py-2 pr-3">Lapeer</td>
+                    <td class="py-2 pr-3 font-mono text-xs">3000</td>
+                    <td class="py-2 font-mono text-xs">counter.lp · sales.lp · warehouse.lp</td>
+                  </tr>
+                  <tr class="border-t border-slate-100 dark:border-slate-800">
+                    <td class="py-2 pr-3">Livonia</td>
+                    <td class="py-2 pr-3 font-mono text-xs">4000</td>
+                    <td class="py-2 font-mono text-xs">counter.lv · sales.lv · warehouse.lv</td>
+                  </tr>
+                  <tr class="border-t border-slate-100 dark:border-slate-800">
+                    <td class="py-2 pr-3">All branches</td>
+                    <td class="py-2 pr-3 font-mono text-xs">—</td>
+                    <td class="py-2 font-mono text-xs">manager · admin</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <ul class="mt-4 space-y-1.5 text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+              <li>Counter, sales, and warehouse only see their branch book.</li>
+              <li>Manager and admin can switch branch or view all four.</li>
+              <li>Void, cancel, refund, and delete need a manager or admin.</li>
+              <li>Card payments say “Processed via Stripe (demo)” and never ask for a card number.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="app-shell" class="h-full overflow-hidden">
   <div id="sidebar-backdrop" class="fixed inset-0 z-40 bg-slate-900/40 dark:bg-black/60 hidden lg:hidden"></div>
 
   <!-- Sidebar -->
@@ -148,10 +242,17 @@
       <a href="#" data-view="deliveries" class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm">
         <i class="fa-solid fa-truck w-5 text-center"></i> Deliveries
       </a>
+      <a href="#" data-view="audit" class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm">
+        <i class="fa-solid fa-clipboard-list w-5 text-center"></i> Audit log
+      </a>
     </nav>
-    <div class="p-4 border-t border-slate-100 dark:border-slate-800 text-xs text-slate-400 dark:text-slate-500 leading-relaxed">
-      Demo prototype for distributor sales<br>
-      Port Huron · Livonia · Saginaw
+    <div class="p-4 border-t border-slate-100 dark:border-slate-800 text-xs text-slate-400 dark:text-slate-500 leading-relaxed space-y-3">
+      <div id="sidebar-session"></div>
+      <div id="branch-switch-wrap" class="hidden">
+        <label for="branch-switch" class="block text-[11px] font-medium text-slate-500 dark:text-slate-400 mb-1">Viewing</label>
+        <select id="branch-switch" class="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-xs bg-white text-slate-800 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-100"></select>
+      </div>
+      <p>Demo sign-in only — not production security.<br>1000 Port Huron · 2000 Saginaw<br>3000 Lapeer · 4000 Livonia</p>
     </div>
   </aside>
 
@@ -174,11 +275,14 @@
         <i class="fa-solid fa-plus"></i>
         <span class="hidden sm:inline">Quick Add</span>
       </button>
-      <div class="hidden lg:block text-right leading-tight shrink-0">
-        <div class="text-xs font-medium text-slate-700 dark:text-slate-200">Inside Sales</div>
-        <div class="text-[11px] text-slate-400 dark:text-slate-500">Port Huron counter</div>
+      <div class="hidden md:block text-right leading-tight shrink-0 max-w-[11rem]">
+        <div id="session-name" class="text-xs font-medium text-slate-700 dark:text-slate-200 truncate"></div>
+        <div id="session-meta" class="text-[11px] text-slate-400 dark:text-slate-500 truncate"></div>
       </div>
-      <div class="w-9 h-9 bg-slate-200 rounded-full hidden sm:flex items-center justify-center text-sm font-medium text-slate-700 shrink-0 dark:bg-slate-700 dark:text-slate-100" title="Inside sales, Port Huron">PH</div>
+      <div id="session-avatar" class="w-9 h-9 bg-slate-200 rounded-full hidden sm:flex items-center justify-center text-sm font-medium text-slate-700 shrink-0 dark:bg-slate-700 dark:text-slate-100"></div>
+      <button id="sign-out" type="button" class="w-9 h-9 shrink-0 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100 flex items-center justify-center" aria-label="Sign out" title="Sign out">
+        <i class="fa-solid fa-right-from-bracket text-sm"></i>
+      </button>
     </header>
 
     <div id="content" class="flex-1 overflow-auto p-4 sm:p-6 min-w-0"></div>
@@ -203,6 +307,7 @@
   <div id="toasts" class="fixed z-[60] bottom-4 left-1/2 -translate-x-1/2 w-[min(20rem,calc(100%-2rem))] flex flex-col gap-2 pointer-events-none" aria-live="polite" aria-relevant="additions"></div>
   <div id="sku-popover" class="fixed z-[90] hidden max-h-72 overflow-auto rounded-xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900" role="listbox"></div>
 
+  </div>
   <script src="app.js"></script>
 </body>
 </html>

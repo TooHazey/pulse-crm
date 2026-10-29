@@ -4,14 +4,99 @@
 //
 // Quotes are the commercial document. Pipeline deals stay opportunity stages.
 // Orders are multi-line releases. Deliveries are the job-site board.
+//
+// Sign-in, branch tags, and the audit log are demo theater. They teach the
+// model (who, which branch, which role) and do not authenticate anyone.
+// The real path is docs/PRODUCTION.md. Demo password is plaintext on purpose.
 
 const STAGES = ['Lead', 'Qualified', 'Proposal', 'Negotiation', 'Closed Won', 'Closed Lost'];
 const QUOTE_STATUSES = ['Draft', 'Sent', 'Accepted', 'Expired', 'Converted'];
 const ORDER_STATUSES = ['Draft', 'Confirmed', 'Shipped', 'Delivered', 'Cancelled'];
 const DELIVERY_STATUSES = ['Scheduled', 'Out for delivery', 'Delivered', 'Failed'];
+const PAY_STATUSES = ['Unpaid', 'Partial', 'Paid', 'Refunded'];
+const PAY_METHODS = ['Cash', 'Check', 'Card', 'Account'];
 const UOMS = ['ea', 'ft', 'coil', 'box', 'c', 'm', 'roll', 'set'];
-const VIEWS = ['dashboard', 'pipeline', 'quotes', 'contacts', 'tasks', 'products', 'orders', 'deliveries'];
+const VIEWS = ['dashboard', 'pipeline', 'quotes', 'contacts', 'tasks', 'products', 'orders', 'deliveries', 'audit'];
 const THEME_KEY = 'pulse-theme';
+const SESSION_KEY = 'pulse-session';
+const AUDIT_KEY = 'pulse-audit';
+const DEMO_PASSWORD = 'pulse';
+const IDLE_MS = 15 * 60 * 1000;
+const MI_RATE = 0.06;
+
+const BRANCHES = [
+  { id: '1000', name: 'Port Huron', short: 'PH', zip: '48060' },
+  { id: '2000', name: 'Saginaw', short: 'SG', zip: '48601' },
+  { id: '3000', name: 'Lapeer', short: 'LP', zip: '48446' },
+  { id: '4000', name: 'Livonia', short: 'LV', zip: '48150' },
+];
+
+// Michigan is a flat 6% state rate in this demo. The ZIP table is the stand-in
+// for a tax engine: known ship-to ZIPs resolve here, other 48xxx/49xxx ZIPs
+// fall back to 6%, and a non-Michigan ZIP is treated as an out-of-state 0%.
+const ZIP_RATES = {
+  '48060': 0.06, '48059': 0.06, '48039': 0.06,
+  '48601': 0.06, '48602': 0.06, '48607': 0.06, '48750': 0.06,
+  '48446': 0.06, '48444': 0.06,
+  '48150': 0.06, '48152': 0.06, '48154': 0.06, '48183': 0.06,
+};
+
+const DEMO_USERS = [
+  { id: 'u-ph-counter', username: 'counter.ph', name: 'Jordan Hale', role: 'counter', branchId: '1000' },
+  { id: 'u-ph-sales', username: 'sales.ph', name: 'Morgan Ellis', role: 'sales', branchId: '1000' },
+  { id: 'u-ph-wh', username: 'warehouse.ph', name: 'Sam Ortega', role: 'warehouse', branchId: '1000' },
+  { id: 'u-sg-counter', username: 'counter.sg', name: 'Casey Brandt', role: 'counter', branchId: '2000' },
+  { id: 'u-sg-sales', username: 'sales.sg', name: 'Riley Nguyen', role: 'sales', branchId: '2000' },
+  { id: 'u-sg-wh', username: 'warehouse.sg', name: 'Drew Patel', role: 'warehouse', branchId: '2000' },
+  { id: 'u-lp-counter', username: 'counter.lp', name: 'Avery Quinn', role: 'counter', branchId: '3000' },
+  { id: 'u-lp-sales', username: 'sales.lp', name: 'Parker Singh', role: 'sales', branchId: '3000' },
+  { id: 'u-lp-wh', username: 'warehouse.lp', name: 'Quinn Brooks', role: 'warehouse', branchId: '3000' },
+  { id: 'u-lv-counter', username: 'counter.lv', name: 'Taylor Brooks', role: 'counter', branchId: '4000' },
+  { id: 'u-lv-sales', username: 'sales.lv', name: 'Jamie Okonkwo', role: 'sales', branchId: '4000' },
+  { id: 'u-lv-wh', username: 'warehouse.lv', name: 'Reese Alvarez', role: 'warehouse', branchId: '4000' },
+  { id: 'u-mgr', username: 'manager', name: 'Riley Cho', role: 'manager', branchId: '1000' },
+  { id: 'u-admin', username: 'admin', name: 'Alex Morgan', role: 'admin', branchId: '1000' },
+];
+
+const ROLE_LABEL = {
+  counter: 'Counter',
+  sales: 'Inside sales',
+  warehouse: 'Warehouse',
+  manager: 'Manager',
+  admin: 'Admin',
+};
+
+const VIEW_ROLES = {
+  dashboard: ['counter', 'sales', 'warehouse', 'manager', 'admin'],
+  pipeline: ['sales', 'manager', 'admin'],
+  quotes: ['counter', 'sales', 'manager', 'admin'],
+  contacts: ['counter', 'sales', 'manager', 'admin'],
+  tasks: ['sales', 'manager', 'admin'],
+  products: ['counter', 'sales', 'warehouse', 'manager', 'admin'],
+  orders: ['counter', 'sales', 'warehouse', 'manager', 'admin'],
+  deliveries: ['counter', 'sales', 'warehouse', 'manager', 'admin'],
+  audit: ['manager', 'admin'],
+};
+
+const CONTACT_BRANCH = {
+  1: '1000', 2: '2000', 3: '2000', 4: '1000',
+  5: '4000', 6: '1000', 7: '2000', 8: '4000',
+  9: '3000', 10: '3000', 11: '3000',
+};
+
+const CONTACT_TAX = {
+  1: { shipZip: '48060', taxExempt: false, resaleCertificate: '' },
+  2: { shipZip: '48602', taxExempt: true, resaleCertificate: 'MI-RS-22018' },
+  3: { shipZip: '48601', taxExempt: false, resaleCertificate: '' },
+  4: { shipZip: '48060', taxExempt: true, resaleCertificate: 'GOV-SCT-DPW' },
+  5: { shipZip: '48183', taxExempt: false, resaleCertificate: '' },
+  6: { shipZip: '48039', taxExempt: false, resaleCertificate: '' },
+  7: { shipZip: '48750', taxExempt: true, resaleCertificate: 'GOV-HSWA' },
+  8: { shipZip: '48150', taxExempt: true, resaleCertificate: 'MI-RS-88410' },
+  9: { shipZip: '48446', taxExempt: true, resaleCertificate: 'GOV-LAPEER' },
+  10: { shipZip: '48444', taxExempt: false, resaleCertificate: '' },
+  11: { shipZip: '48446', taxExempt: true, resaleCertificate: 'MI-RS-30991' },
+};
 
 const CATALOG = [
   { section: 'Conduit & Raceway', subs: ['EMT', 'Rigid', 'PVC', 'Liquidtight', 'Flexible', 'Strut & Fittings'] },
@@ -88,6 +173,13 @@ const QUOTE_STATUS_CLASS = {
   'Converted': 'bg-violet-100 text-violet-700 dark:bg-violet-900/50 dark:text-violet-200',
 };
 
+const PAY_STATUS_CLASS = {
+  'Unpaid': ORDER_STATUS_CLASS.Draft,
+  'Partial': ORDER_STATUS_CLASS.Shipped,
+  'Paid': ORDER_STATUS_CLASS.Delivered,
+  'Refunded': ORDER_STATUS_CLASS.Cancelled,
+};
+
 const DELIVERY_STATUS_CLASS = {
   'Scheduled': 'bg-sky-100 text-sky-800 dark:bg-sky-900/50 dark:text-sky-200',
   'Out for delivery': ORDER_STATUS_CLASS.Shipped,
@@ -102,7 +194,8 @@ const LABEL = 'block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1
 
 // Bump when the sample book should replace an older `pulse-crm` seed once.
 // The version lives in `pulse-crm-seed-version`, separate from the book and from `pulse-theme`.
-const SEED_VERSION = '3';
+// Version 4 tags the book by branch and adds Michigan tax plus demo payments.
+const SEED_VERSION = '4';
 const SEED_VERSION_KEY = 'pulse-crm-seed-version';
 
 const DEFAULT_SHIP_TO = {
@@ -114,7 +207,14 @@ const DEFAULT_SHIP_TO = {
   6: 'Wolverine Line job trailer, North River subdivision, Marine City, MI',
   7: 'Huron Shore pump station 4, 8900 Lakeshore Rd, Oscoda, MI',
   8: 'Riverview OEM Systems, Livonia, MI',
+  9: 'Lapeer County courthouse, 255 Clay St, Lapeer, MI 48446',
+  10: 'Pell Electric laydown, 1400 S Cedar, Imlay City, MI 48444',
+  11: 'Lapeer Metalworks, 1840 Imlay City Rd, Lapeer, MI 48446',
 };
+
+let session = null;
+let idleTimer = 0;
+let lastSessionWrite = 0;
 
 let state = {
   contacts: [],
@@ -179,6 +279,7 @@ function load() {
   state.orders = state.orders || [];
   state.deliveries = state.deliveries || [];
   if (!VIEWS.includes(state.currentView)) state.currentView = 'dashboard';
+  seedAuditIfEmpty();
 }
 
 function save() {
@@ -206,6 +307,9 @@ function seedData() {
     { id: 6, name: 'Chris Nguyen', email: 'chris.nguyen@wolverineline.com', company: 'Wolverine Line Construction', phone: '+1 810-555-0133', title: 'Estimator' },
     { id: 7, name: 'Angela Brooks', email: 'angela.brooks@huronshorewater.org', company: 'Huron Shore Water Authority', phone: '+1 989-555-0127', title: 'Maintenance Planner' },
     { id: 8, name: 'James Okonkwo', email: 'james.okonkwo@riverviewoem.com', company: 'Riverview OEM Systems', phone: '+1 248-555-0194', title: 'Controls Engineer' },
+    { id: 9, name: 'Ruth Keller', email: 'ruth.keller@lapeercounty.gov', company: 'Lapeer County Facilities', phone: '+1 810-555-0188', title: 'Facilities Buyer' },
+    { id: 10, name: 'Nate Pell', email: 'nate.pell@pellelectric.com', company: 'Pell Electric', phone: '+1 810-555-0160', title: 'Estimator' },
+    { id: 11, name: 'Sofia Marin', email: 'sofia.marin@lapeerfab.com', company: 'Lapeer Metalworks', phone: '+1 810-555-0199', title: 'MRO Buyer' },
   ];
   state.deals = [
     { id: 1, title: 'St. Clair Hospital job package', contactId: 1, value: 186400, stage: 'Proposal', closeDate: '2026-11-21' },
@@ -217,6 +321,9 @@ function seedData() {
     { id: 7, title: 'Machine-line PLC & sensor kit', contactId: 8, value: 58750, stage: 'Qualified', closeDate: '2026-12-04' },
     { id: 8, title: 'Pump station drive startup', contactId: 7, value: 22600, stage: 'Negotiation', closeDate: '2026-11-08' },
     { id: 9, title: 'County fairgrounds lighting bid', contactId: 4, value: 18400, stage: 'Closed Lost', closeDate: '2026-10-10' },
+    { id: 10, title: 'Courthouse lighting retrofit', contactId: 9, value: 36400, stage: 'Qualified', closeDate: '2026-12-02' },
+    { id: 11, title: 'Imlay City temp power', contactId: 10, value: 18250, stage: 'Proposal', closeDate: '2026-11-20' },
+    { id: 12, title: 'Fab cell cord and sensors', contactId: 11, value: 9400, stage: 'Closed Won', closeDate: '2026-10-26' },
   ];
   state.tasks = [
     { id: 1, title: 'Send revised hospital package quote to Dana Kowalski', dealId: 1, due: '2026-10-30', done: false },
@@ -225,6 +332,8 @@ function seedData() {
     { id: 4, title: 'Schedule Port Huron garage lighting delivery window', dealId: 3, due: '2026-11-03', done: false },
     { id: 5, title: 'Book drive startup at Huron Shore pump station', dealId: 8, due: '2026-11-06', done: true },
     { id: 6, title: 'Follow up on Blue Water annual stock-agreement pricing', dealId: 4, due: '2026-11-04', done: false },
+    { id: 7, title: 'Call Nate Pell on the Imlay temp-power quote', dealId: 11, due: '2026-10-31', done: false },
+    { id: 8, title: 'Confirm courthouse high-bay alternates with Ruth Keller', dealId: 10, due: '2026-11-05', done: false },
   ];
   state.activities = [
     { id: 6, text: 'Sent Q-1004 conveyor drive package to Priya Shah at Saginaw Foundry', time: '1h ago', contactId: 3 },
@@ -233,6 +342,8 @@ function seedData() {
     { id: 3, text: 'Sent high-bay submittals to Tom Brennan for the municipal garage', time: 'Yesterday', contactId: 4 },
     { id: 4, text: 'Priya Shah asked for startup support on the 480V conveyor drives', time: '3d ago', contactId: 3 },
     { id: 5, text: 'Wolverine Line PVC and building-wire release delivered to the job trailer', time: '4d ago', contactId: 6 },
+    { id: 7, text: 'Lapeer Metalworks put the fab-cell sensors on account', time: '2d ago', contactId: 11 },
+    { id: 8, text: 'Refunded a mis-rung fittings ticket at the Lapeer counter', time: 'Yesterday', contactId: 10 },
   ];
 
   // id, sku, name, price, stock, reorder, section, subcategory, manufacturer, uom
@@ -378,6 +489,23 @@ function seedData() {
         { productId: 4, qty: 2, price: 214, uom: 'coil' },
       ]
     }),
+    stamp({
+      id: 8, orderNumber: 'ORD-4458', contactId: 11, date: '2026-10-26', status: 'Delivered',
+      customerPo: 'LM-1044', jobName: 'Fab cell', quoteId: null,
+      notes: 'Sensors and cord for the fabrication cell. Resale certificate on file.',
+      items: [
+        { productId: 13, qty: 8, price: 74, uom: 'ea' },
+        { productId: 8, qty: 1, price: 412, uom: 'coil' },
+      ]
+    }),
+    stamp({
+      id: 9, orderNumber: 'ORD-4466', contactId: 10, date: '2026-10-27', status: 'Cancelled',
+      customerPo: '', jobName: 'Counter — wrong job', quoteId: null,
+      notes: 'Rung on the wrong job at the Lapeer counter. Refunded the same afternoon. Demo card only — no card number stored.',
+      items: [
+        { productId: 5, qty: 10, price: 2, uom: 'ea' },
+      ]
+    }),
   ];
 
   state.quotes = [
@@ -443,6 +571,22 @@ function seedData() {
         { productId: 13, qty: 6, price: 74, uom: 'ea' },
       ]
     }),
+    stamp({
+      id: 8, quoteNumber: 'Q-1008', contactId: 10, status: 'Sent', date: '2026-10-28', expiryDate: '2026-11-20', orderId: null,
+      notes: 'Imlay City temp power. EMT and 12 AWG for the subdivision trailer.',
+      items: [
+        { productId: 1, qty: 80, price: 9, uom: 'ea' },
+        { productId: 6, qty: 4, price: 118, uom: 'coil' },
+      ]
+    }),
+    stamp({
+      id: 9, quoteNumber: 'Q-1009', contactId: 9, status: 'Draft', date: '2026-10-29', expiryDate: '2026-12-02', orderId: null,
+      notes: 'Courthouse high bays. County exemption certificate GOV-LAPEER.',
+      items: [
+        { productId: 14, qty: 16, price: 189, uom: 'ea' },
+        { productId: 15, qty: 6, price: 62, uom: 'ea' },
+      ]
+    }),
   ];
 
   state.deliveries = [
@@ -488,15 +632,361 @@ function seedData() {
       carrier: 'MEC truck', tracking: '', status: 'Scheduled',
       notes: 'Early window. Hospital receiving opens at 6.'
     },
+    {
+      id: 7, deliveryNumber: 'DEL-2218', orderId: 8, contactId: 11,
+      shipTo: 'Lapeer Metalworks, 1840 Imlay City Rd, Lapeer, MI 48446',
+      jobSite: 'Fab cell', requestedDate: '2026-10-27', window: '9:00–11:00 AM',
+      carrier: 'MEC truck', tracking: 'MEC-4458-D', status: 'Delivered',
+      notes: 'Sensors and one coil of cord. Signed for at receiving.'
+    },
   ];
+  finalizeBook();
   save();
 }
 
 function stamp(doc) {
-  const total = lineSum(doc.items);
-  doc.subtotal = total;
-  doc.total = total;
+  doc.payments = doc.payments || [];
   return doc;
+}
+
+function branchById(id) {
+  return BRANCHES.find(b => b.id === String(id || '')) || null;
+}
+function branchName(id) {
+  if (!id || id === 'all') return 'All branches';
+  const branch = branchById(id);
+  return branch ? branch.name : 'Branch';
+}
+function isManagerRole(role) {
+  return role === 'manager' || role === 'admin';
+}
+function isManager() {
+  return !!(session && isManagerRole(session.role));
+}
+function can(action) {
+  const role = session?.role;
+  if (!role) return false;
+  if (action === 'void' || action === 'refund' || action === 'delete' || action === 'audit' || action === 'switch-branch') {
+    return isManagerRole(role);
+  }
+  if (action === 'pay') return role === 'counter' || role === 'sales' || isManagerRole(role);
+  if (action === 'edit-product') return role === 'warehouse' || isManagerRole(role);
+  if (action === 'edit-quote' || action === 'edit-contact') return role === 'counter' || role === 'sales' || isManagerRole(role);
+  if (action === 'edit-order' || action === 'edit-delivery') return true;
+  if (action === 'pipeline') return role === 'sales' || isManagerRole(role);
+  return false;
+}
+function canView(view) {
+  const roles = VIEW_ROLES[view] || [];
+  return !!(session && roles.includes(session.role));
+}
+function activeBranchId() {
+  if (!session) return null;
+  if (isManager()) {
+    if (!session.viewBranch || session.viewBranch === 'all') return null;
+    return session.viewBranch;
+  }
+  return session.branchId;
+}
+function scopeLabel() {
+  const id = activeBranchId();
+  if (!id) return 'All branches';
+  const branch = branchById(id);
+  return branch ? `${branch.name} (${branch.id})` : id;
+}
+function inScope(row) {
+  const branchId = activeBranchId();
+  if (!branchId) return true;
+  return String(row?.branchId || '') === String(branchId);
+}
+function scopeList(list) {
+  return (list || []).filter(inScope);
+}
+function writingBranch(explicit) {
+  return explicit || activeBranchId() || session?.branchId || '1000';
+}
+function branchTag(row) {
+  if (activeBranchId() || !row) return '';
+  return `<div class="text-[11px] text-slate-400 dark:text-slate-500">${escapeHtml(branchName(row.branchId))} · ${escapeHtml(row.branchId || '')}</div>`;
+}
+function normalizeZip(zip) {
+  const match = String(zip || '').match(/\d{5}/);
+  return match ? match[0] : '';
+}
+function rateForZip(zip) {
+  const z = normalizeZip(zip);
+  if (!z) return MI_RATE;
+  if (Object.prototype.hasOwnProperty.call(ZIP_RATES, z)) return ZIP_RATES[z];
+  const n = Number(z);
+  if (n >= 48000 && n <= 49999) return MI_RATE;
+  return 0;
+}
+function taxQuote(subtotal, ctx) {
+  const taxExempt = !!(ctx && ctx.taxExempt);
+  const shipZip = normalizeZip(ctx && ctx.shipZip);
+  const taxRate = taxExempt ? 0 : rateForZip(shipZip);
+  const base = moneyRound(subtotal);
+  const taxAmount = moneyRound(base * taxRate);
+  return {
+    subtotal: base,
+    taxExempt,
+    shipZip,
+    resaleCertificate: (ctx && ctx.resaleCertificate) || '',
+    taxRate,
+    taxAmount,
+    total: moneyRound(base + taxAmount),
+  };
+}
+function taxCaption(ctx) {
+  const priced = taxQuote(0, ctx || {});
+  if (ctx && ctx.taxExempt) {
+    return ctx.resaleCertificate ? `Exempt · ${ctx.resaleCertificate}` : 'Tax exempt';
+  }
+  const z = normalizeZip(ctx && ctx.shipZip);
+  if (priced.taxRate === 0) return z ? `Outside Michigan · ${z}` : 'No Michigan tax';
+  const pct = (priced.taxRate * 100).toFixed(2).replace(/\.00$/, '');
+  return z ? `MI ${pct}% · ${z}` : `MI ${pct}%`;
+}
+function paymentNet(doc) {
+  return moneyRound((doc?.payments || []).reduce((sum, pay) => sum + (Number(pay.amount) || 0), 0));
+}
+function paymentStatusOf(doc) {
+  const payments = doc?.payments || [];
+  const net = paymentNet(doc);
+  const refunded = payments.reduce((sum, pay) => sum + (Number(pay.amount) < 0 ? Math.abs(Number(pay.amount)) : 0), 0);
+  if (refunded > 0.009 && net <= 0.009) return 'Refunded';
+  const total = Number(doc?.total) || 0;
+  if (total > 0 && net + 0.009 >= total) return 'Paid';
+  if (net > 0.009) return 'Partial';
+  return 'Unpaid';
+}
+function paymentMethodOf(doc) {
+  if ((doc?.paymentStatus || paymentStatusOf(doc)) === 'Refunded') return 'Refund';
+  const methods = [...new Set((doc?.payments || []).filter(pay => Number(pay.amount) > 0).map(pay => pay.method))];
+  if (!methods.length) return '';
+  if (methods.length > 1) return 'Mixed';
+  return methods[0];
+}
+function methodLabel(method) {
+  if (method === 'Card') return 'Card (demo)';
+  if (method === 'Account') return 'Account';
+  if (method === 'Refund') return 'Refund';
+  return method || '';
+}
+function refreshPayment(doc) {
+  doc.payments = doc.payments || [];
+  doc.amountPaid = paymentNet(doc);
+  doc.paymentStatus = paymentStatusOf(doc);
+  doc.paymentMethod = paymentMethodOf(doc);
+  return doc;
+}
+function priceDoc(doc) {
+  const contact = contactById(doc.contactId);
+  if (doc.taxExempt == null) doc.taxExempt = !!(contact && contact.taxExempt);
+  if (!normalizeZip(doc.shipZip)) doc.shipZip = (contact && contact.shipZip) || branchById(doc.branchId)?.zip || '';
+  if (!doc.resaleCertificate && contact && contact.resaleCertificate) doc.resaleCertificate = contact.resaleCertificate;
+  const priced = taxQuote(lineSum(doc.items), doc);
+  doc.subtotal = priced.subtotal;
+  doc.taxExempt = priced.taxExempt;
+  doc.shipZip = normalizeZip(doc.shipZip) || priced.shipZip;
+  doc.taxRate = priced.taxRate;
+  doc.taxAmount = priced.taxAmount;
+  doc.total = priced.total;
+  doc.payments = doc.payments || [];
+  refreshPayment(doc);
+  return doc;
+}
+function seedBranchInventory() {
+  state.products.forEach(p => {
+    const ph = Number(p.stock) || 0;
+    const map = { '1000': ph };
+    const section = p.section || p.category;
+    const carry = (branch, factor) => {
+      map[branch] = Math.max(1, Math.round(ph * factor));
+    };
+    if (section === 'Control & Automation') {
+      carry('2000', 0.5);
+      carry('4000', 0.4);
+      if (['Sensors', 'Contactors'].includes(p.subcategory) && p.price < 100) carry('3000', 0.25);
+    } else if (section === 'Wire & Cable') {
+      carry('2000', 0.35);
+      carry('3000', 0.2);
+      carry('4000', 0.3);
+    } else if (section === 'Conduit & Raceway') {
+      carry('2000', 0.3);
+      carry('3000', 0.35);
+      if (['EMT', 'PVC', 'Strut & Fittings', 'Liquidtight'].includes(p.subcategory)) carry('4000', 0.15);
+    } else if (section === 'Lighting') {
+      carry('3000', 0.3);
+      carry('2000', 0.15);
+      carry('4000', 0.2);
+    } else if (section === 'Devices & Distribution') {
+      carry('3000', 0.4);
+      carry('2000', 0.2);
+      carry('4000', 0.2);
+    }
+    if (String(p.sku).startsWith('VFD-') || String(p.sku).startsWith('PLC-')) delete map['3000'];
+    p.stockByBranch = map;
+  });
+}
+function pushPay(doc, amount, method, userName, at, note) {
+  doc.payments = doc.payments || [];
+  doc.payments.push({
+    id: `pay-${doc.id}-${doc.payments.length + 1}`,
+    amount: moneyRound(amount),
+    method,
+    at,
+    userId: 'seed',
+    userName,
+    note: note || (method === 'Card' ? 'Processed via Stripe (demo)' : ''),
+  });
+}
+function seedPayments() {
+  const byNum = {};
+  state.orders.forEach(order => { byNum[order.orderNumber] = order; });
+  const pay = (num, amount, method, user, at, note) => {
+    if (byNum[num]) pushPay(byNum[num], amount, method, user, at, note);
+  };
+  pay('ORD-4422', 2000, 'Check', 'Casey Brandt', '2026-10-22T15:10:00', 'Partial check at the Saginaw counter');
+  if (byNum['ORD-4429']) pay('ORD-4429', byNum['ORD-4429'].total, 'Check', 'Jordan Hale', '2026-10-16T14:05:00', 'Township check, exemption on file');
+  pay('ORD-4436', 1000, 'Account', 'Taylor Brooks', '2026-10-27T11:40:00', 'Applied to the Blue Water house account');
+  if (byNum['ORD-4444']) pay('ORD-4444', byNum['ORD-4444'].total, 'Card', 'Jordan Hale', '2026-10-21T16:20:00', 'Processed via Stripe (demo)');
+  if (byNum['ORD-4458']) pay('ORD-4458', byNum['ORD-4458'].total, 'Account', 'Avery Quinn', '2026-10-26T10:15:00', 'On account — resale certificate MI-RS-30991');
+  if (byNum['ORD-4466']) {
+    pay('ORD-4466', byNum['ORD-4466'].total, 'Card', 'Avery Quinn', '2026-10-27T09:05:00', 'Processed via Stripe (demo)');
+    pay('ORD-4466', -byNum['ORD-4466'].total, 'Refund', 'Riley Cho', '2026-10-27T15:40:00', 'Full refund of the mis-rung counter ticket. No card number stored.');
+  }
+  state.orders.forEach(refreshPayment);
+  state.quotes.forEach(refreshPayment);
+}
+function finalizeBook() {
+  state.contacts.forEach(contact => {
+    const tax = CONTACT_TAX[contact.id] || {};
+    contact.branchId = contact.branchId || CONTACT_BRANCH[contact.id] || '1000';
+    if (contact.shipZip == null || contact.shipZip === '') contact.shipZip = tax.shipZip || branchById(contact.branchId)?.zip || '';
+    if (contact.taxExempt == null) contact.taxExempt = !!tax.taxExempt;
+    if (contact.resaleCertificate == null) contact.resaleCertificate = tax.resaleCertificate || '';
+  });
+  state.deals.forEach(deal => {
+    deal.branchId = deal.branchId || contactById(deal.contactId)?.branchId || '1000';
+  });
+  state.tasks.forEach(task => {
+    const deal = state.deals.find(item => item.id == task.dealId);
+    task.branchId = task.branchId || deal?.branchId || '1000';
+  });
+  state.activities.forEach(activity => {
+    activity.branchId = activity.branchId || contactById(activity.contactId)?.branchId || '1000';
+  });
+  seedBranchInventory();
+  state.quotes.forEach(quote => {
+    quote.branchId = quote.branchId || contactById(quote.contactId)?.branchId || '1000';
+    quote.payments = quote.payments || [];
+    priceDoc(quote);
+  });
+  state.orders.forEach(order => {
+    order.branchId = order.branchId || contactById(order.contactId)?.branchId || '1000';
+    order.payments = order.payments || [];
+    priceDoc(order);
+  });
+  seedPayments();
+  state.deliveries.forEach(delivery => {
+    const order = orderById(delivery.orderId);
+    delivery.branchId = delivery.branchId || order?.branchId || contactById(delivery.contactId)?.branchId || '1000';
+  });
+  seedAuditIfEmpty();
+}
+function branchCarries(product, branchId) {
+  if (!product) return false;
+  if (!branchId) return true;
+  return Object.prototype.hasOwnProperty.call(product.stockByBranch || {}, String(branchId));
+}
+function onHand(product, branchId) {
+  if (!product) return 0;
+  const map = product.stockByBranch;
+  if (!map) return Number(product.stock) || 0;
+  const id = branchId === undefined ? activeBranchId() : branchId;
+  if (!id) return Object.values(map).reduce((sum, qty) => sum + (Number(qty) || 0), 0);
+  return Number(map[id] || 0);
+}
+function reorderPoint(product, branchId) {
+  const base = Number(product?.reorderLevel) || 0;
+  if (!branchId || branchId === '1000') return base;
+  return Math.max(1, Math.round(base * 0.25));
+}
+function isLowStock(product, branchId) {
+  const id = branchId === undefined ? activeBranchId() : branchId;
+  if (!id) return BRANCHES.some(branch => branchCarries(product, branch.id) && onHand(product, branch.id) <= reorderPoint(product, branch.id));
+  if (!branchCarries(product, id)) return false;
+  return onHand(product, id) <= reorderPoint(product, id);
+}
+function productInScope(product) {
+  const branchId = activeBranchId();
+  if (!branchId) return true;
+  return branchCarries(product, branchId);
+}
+function readAudit() {
+  try {
+    const rows = JSON.parse(localStorage.getItem(AUDIT_KEY) || '[]');
+    return Array.isArray(rows) ? rows : [];
+  } catch (err) {
+    return [];
+  }
+}
+function seedAuditIfEmpty() {
+  if (localStorage.getItem(AUDIT_KEY)) return;
+  const rows = [
+    { id: 'aud-1', at: '2026-10-16T14:05:00', userId: 'u-ph-counter', userName: 'Jordan Hale', role: 'counter', branchId: '1000', action: 'payment', detail: 'ORD-4429 Unpaid → Paid · Check · exemption GOV-SCT-DPW' },
+    { id: 'aud-2', at: '2026-10-21T16:20:00', userId: 'u-ph-counter', userName: 'Jordan Hale', role: 'counter', branchId: '1000', action: 'payment', detail: 'ORD-4444 Unpaid → Paid · Card · Processed via Stripe (demo)' },
+    { id: 'aud-3', at: '2026-10-22T15:10:00', userId: 'u-sg-counter', userName: 'Casey Brandt', role: 'counter', branchId: '2000', action: 'payment', detail: 'ORD-4422 Unpaid → Partial · Check · $2,000.00' },
+    { id: 'aud-4', at: '2026-10-26T10:15:00', userId: 'u-lp-counter', userName: 'Avery Quinn', role: 'counter', branchId: '3000', action: 'payment', detail: 'ORD-4458 Unpaid → Paid · Account' },
+    { id: 'aud-5', at: '2026-10-27T09:05:00', userId: 'u-lp-counter', userName: 'Avery Quinn', role: 'counter', branchId: '3000', action: 'payment', detail: 'ORD-4466 Unpaid → Paid · Card · Processed via Stripe (demo)' },
+    { id: 'aud-6', at: '2026-10-27T11:40:00', userId: 'u-lv-counter', userName: 'Taylor Brooks', role: 'counter', branchId: '4000', action: 'payment', detail: 'ORD-4436 Unpaid → Partial · Account · $1,000.00' },
+    { id: 'aud-7', at: '2026-10-27T15:40:00', userId: 'u-mgr', userName: 'Riley Cho', role: 'manager', branchId: '3000', action: 'refund', detail: 'ORD-4466 Paid → Refunded · full refund of the mis-rung Lapeer ticket' },
+    { id: 'aud-8', at: '2026-10-27T15:41:00', userId: 'u-mgr', userName: 'Riley Cho', role: 'manager', branchId: '3000', action: 'void', detail: 'ORD-4466 cancelled after the refund' },
+  ];
+  localStorage.setItem(AUDIT_KEY, JSON.stringify(rows));
+}
+function audit(action, detail) {
+  const log = readAudit();
+  log.unshift({
+    id: uid(),
+    at: new Date().toISOString(),
+    userId: session?.userId || '',
+    userName: session?.name || 'System',
+    role: session?.role || '',
+    branchId: activeBranchId() || session?.branchId || '',
+    action,
+    detail: detail || '',
+  });
+  localStorage.setItem(AUDIT_KEY, JSON.stringify(log.slice(0, 200)));
+}
+function saveSession() {
+  if (!session) localStorage.removeItem(SESSION_KEY);
+  else localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+}
+function readStoredSession() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
+    if (!raw || !raw.userId) return null;
+    const user = DEMO_USERS.find(item => item.id === raw.userId);
+    if (!user) return null;
+    raw.role = user.role;
+    raw.name = user.name;
+    raw.branchId = user.branchId;
+    raw.branchName = branchName(user.branchId);
+    raw.username = user.username;
+    if (!isManagerRole(raw.role)) raw.viewBranch = raw.branchId;
+    if (!raw.viewBranch) raw.viewBranch = raw.branchId;
+    return raw;
+  } catch (err) {
+    return null;
+  }
+}
+function sessionStale(raw) {
+  return !raw || Date.now() - Number(raw.lastActivity || 0) > IDLE_MS;
+}
+function deny(message) {
+  toast('Not allowed in this demo', message || 'A manager or admin has to do that. This gate is not server-side security.', 'warn');
 }
 
 function uid() { return Date.now() + Math.random().toString(36).slice(2, 7); }
@@ -643,17 +1133,22 @@ function qtyByProduct(items) {
   });
   return map;
 }
-function adjustStock(productId, deltaQty) {
+function adjustStock(productId, deltaQty, branchId) {
   if (!deltaQty) return;
   const product = productById(productId);
   if (!product) return;
-  product.stock = Math.round((Number(product.stock) - deltaQty) * 1000) / 1000;
+  const branch = String(branchId || '1000');
+  product.stockByBranch = product.stockByBranch || {};
+  const next = Math.round(((Number(product.stockByBranch[branch]) || 0) - deltaQty) * 1000) / 1000;
+  product.stockByBranch[branch] = next;
+  if (branch === '1000') product.stock = next;
 }
 function syncOrderStock(prev, next) {
+  const branch = (next || prev)?.branchId || activeBranchId() || '1000';
   const before = prev && commitsStock(prev.status) ? qtyByProduct(prev.items) : {};
   const after = next && commitsStock(next.status) ? qtyByProduct(next.items) : {};
   const ids = new Set([...Object.keys(before), ...Object.keys(after)]);
-  ids.forEach(id => adjustStock(id, (after[id] || 0) - (before[id] || 0)));
+  ids.forEach(id => adjustStock(id, (after[id] || 0) - (before[id] || 0), branch));
 }
 function suggestShipTo(contactId) {
   const existing = state.deliveries.find(d => d.contactId == contactId && d.shipTo);
@@ -744,8 +1239,10 @@ function statusChips(statuses, active, action) {
     return `<button type="button" data-action="${action}" data-id="${escapeHtml(s.id)}" class="px-2.5 py-1 rounded-full text-xs font-medium ${cls}">${escapeHtml(s.label)}</button>`;
   }).join('')}</div>`;
 }
-function contactOptions(selected) {
-  return `<option value="">Select customer</option>` + state.contacts.map(c =>
+function contactOptions(selected, branchId) {
+  const branch = branchId === undefined ? activeBranchId() : branchId;
+  const list = state.contacts.filter(c => !branch || String(c.branchId) === String(branch) || c.id == selected);
+  return `<option value="">Select customer</option>` + list.map(c =>
     `<option value="${escapeHtml(c.id)}" ${c.id == selected ? 'selected' : ''}>${escapeHtml(c.name)}${c.company ? ` (${escapeHtml(c.company)})` : ''}</option>`
   ).join('');
 }
@@ -787,11 +1284,14 @@ function initTheme() {
     if (!localStorage.getItem(THEME_KEY)) syncTheme();
   };
   if (mq.addEventListener) mq.addEventListener('change', onChange);
-  document.getElementById('theme-toggle').addEventListener('click', () => {
+  const toggleTheme = () => {
     const dark = document.documentElement.classList.contains('dark');
     localStorage.setItem(THEME_KEY, dark ? 'light' : 'dark');
     syncTheme();
-  });
+  };
+  document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
+  const loginTheme = document.getElementById('login-theme');
+  if (loginTheme) loginTheme.addEventListener('click', toggleTheme);
 }
 function toast(title, detail, tone) {
   const wrap = document.getElementById('toasts');
@@ -827,13 +1327,15 @@ function syncNav() {
   });
 }
 function gotoView(view) {
-  if (!view || !VIEWS.includes(view)) return;
+  if (!view || !VIEWS.includes(view) || !canView(view)) return;
   state.currentView = view;
   closeSidebar(false);
   save();
   render();
 }
 function render() {
+  if (!session) return;
+  if (!canView(state.currentView)) state.currentView = 'dashboard';
   const content = document.getElementById('content');
   const same = renderedView === state.currentView;
   const scroll = same ? content.scrollTop : 0;
@@ -849,6 +1351,7 @@ function render() {
     case 'products': content.innerHTML = renderProducts(q); break;
     case 'orders': content.innerHTML = renderOrders(q); break;
     case 'deliveries': content.innerHTML = renderDeliveries(q); setupDeliveryBoard(); break;
+    case 'audit': content.innerHTML = renderAudit(); break;
     default:
       state.currentView = 'dashboard';
       content.innerHTML = renderDashboard();
@@ -867,16 +1370,23 @@ function linkCard(title, body, view, icon, color) {
     </button>`;
 }
 function renderDashboard() {
-  const totalValue = state.deals.filter(d => !d.stage.includes('Closed')).reduce((s, d) => s + d.value, 0);
-  const won = state.deals.filter(d => d.stage === 'Closed Won').reduce((s, d) => s + d.value, 0);
-  const openTasks = state.tasks.filter(t => !t.done).length;
-  const lowStock = state.products.filter(p => p.stock <= p.reorderLevel);
-  const openOrders = state.orders.filter(o => !['Delivered', 'Cancelled'].includes(o.status)).length;
-  const openQuoteList = state.quotes.filter(q => ['Draft', 'Sent', 'Accepted'].includes(q.status));
+  const deals = scopeList(state.deals);
+  const tasks = scopeList(state.tasks);
+  const products = state.products.filter(productInScope);
+  const orders = scopeList(state.orders);
+  const quotes = scopeList(state.quotes);
+  const deliveries = scopeList(state.deliveries);
+  const contacts = scopeList(state.contacts);
+  const totalValue = deals.filter(d => !d.stage.includes('Closed')).reduce((s, d) => s + d.value, 0);
+  const won = deals.filter(d => d.stage === 'Closed Won').reduce((s, d) => s + d.value, 0);
+  const openTasks = tasks.filter(t => !t.done).length;
+  const lowStock = products.filter(p => isLowStock(p));
+  const openOrders = orders.filter(o => !['Delivered', 'Cancelled'].includes(o.status)).length;
+  const openQuoteList = quotes.filter(q => ['Draft', 'Sent', 'Accepted'].includes(q.status));
   const openQuoteValue = openQuoteList.reduce((s, q) => s + (Number(q.total) || 0), 0);
-  const activeDeliveries = state.deliveries.filter(d => d.status === 'Scheduled' || d.status === 'Out for delivery');
-  const outNow = state.deliveries.filter(d => d.status === 'Out for delivery').length;
-  const activity = state.activities.slice(0, 5).map(a => `
+  const activeDeliveries = deliveries.filter(d => d.status === 'Scheduled' || d.status === 'Out for delivery');
+  const outNow = deliveries.filter(d => d.status === 'Out for delivery').length;
+  const activity = scopeList(state.activities).slice(0, 5).map(a => `
     <div class="flex gap-3 text-sm">
       <div class="w-2 h-2 mt-1.5 rounded-full bg-primary shrink-0"></div>
       <div class="min-w-0">
@@ -884,22 +1394,23 @@ function renderDashboard() {
         <div class="text-xs text-slate-400 dark:text-slate-500">${escapeHtml(a.time)}</div>
       </div>
     </div>`).join('');
-  const stockRows = lowStock.map(p => `
+  const stockShown = lowStock.slice(0, 8);
+  const stockRows = stockShown.map(p => `
     <div class="flex justify-between gap-3 text-sm p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/60">
       <div class="min-w-0">
         <div class="font-medium truncate">${escapeHtml(p.name)}</div>
         <div class="text-xs text-slate-400 dark:text-slate-500">${escapeHtml(p.sku)}</div>
       </div>
-      <div class="text-orange-600 dark:text-orange-300 font-medium shrink-0">${p.stock < 0 ? `${Math.abs(p.stock)} backorder` : `${p.stock} left`}</div>
+      <div class="text-orange-600 dark:text-orange-300 font-medium shrink-0">${onHand(p) < 0 ? `${Math.abs(onHand(p))} backorder` : `${onHand(p)} left`}</div>
     </div>`).join('');
   return `
     <div class="space-y-6">
-      ${pageHeader('Dashboard', 'Opportunities, quotes, releases, and shelf stock for contractors, OEMs, and MRO accounts')}
+      ${pageHeader('Dashboard', `${escapeHtml(scopeLabel())} · opportunities, quotes, releases, and the shelf for this view`)}
       <div class="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 sm:gap-4">
         ${statCard('Pipeline', formatMoney(totalValue), 'fa-dollar-sign', 'text-emerald-600 bg-emerald-50 dark:text-emerald-300 dark:bg-emerald-950/50')}
         ${statCard('Won', formatMoney(won), 'fa-trophy', 'text-amber-600 bg-amber-50 dark:text-amber-300 dark:bg-amber-950/50')}
         ${statCard('Open Tasks', openTasks, 'fa-list-check', 'text-blue-600 bg-blue-50 dark:text-blue-300 dark:bg-blue-950/50')}
-        ${statCard('Contacts', state.contacts.length, 'fa-users', 'text-violet-600 bg-violet-50 dark:text-violet-300 dark:bg-violet-950/50')}
+        ${statCard('Contacts', contacts.length, 'fa-users', 'text-violet-600 bg-violet-50 dark:text-violet-300 dark:bg-violet-950/50')}
         ${statCard('Low Stock', lowStock.length, 'fa-exclamation-triangle', 'text-orange-600 bg-orange-50 dark:text-orange-300 dark:bg-orange-950/50')}
         ${statCard('Open Orders', openOrders, 'fa-shopping-cart', 'text-indigo-600 bg-indigo-50 dark:text-indigo-300 dark:bg-indigo-950/50')}
       </div>
@@ -917,7 +1428,8 @@ function renderDashboard() {
         <div class="lift-card ${CARD} p-5">
           <h3 class="font-semibold mb-4">Low Stock Alerts</h3>
           <div class="space-y-2">
-            ${stockRows || emptyNote('fa-circle-check', 'Shelf is healthy. Nothing is at or under its reorder point.')}
+            ${stockRows || emptyNote('fa-circle-check', 'Shelf is healthy for this view. Nothing carried here is at or under its reorder point.')}
+            ${lowStock.length > stockShown.length ? `<p class="px-2 pt-2 text-xs text-slate-400 dark:text-slate-500">${lowStock.length - stockShown.length} more SKUs are at or under the reorder point.</p>` : ''}
           </div>
         </div>
       </div>
@@ -939,7 +1451,7 @@ function statCard(label, value, icon, color) {
 }
 
 function renderPipeline(q) {
-  const filtered = state.deals.filter(d =>
+  const filtered = scopeList(state.deals).filter(d =>
     !q || d.title.toLowerCase().includes(q) || (contactById(d.contactId)?.name || '').toLowerCase().includes(q)
   );
   const board = (q && filtered.length === 0)
@@ -968,7 +1480,7 @@ function renderPipeline(q) {
       </div>`;
   return `
     <div class="space-y-4">
-      ${pageHeader('Pipeline', 'Job packages, panel builds, retrofits, and stock agreements — drag an opportunity between stages', 'Deal', 'openAddDeal()')}
+      ${pageHeader('Pipeline', `${escapeHtml(scopeLabel())} · job packages, panel builds, retrofits, and stock agreements`, 'Deal', 'openAddDeal()')}
       ${board}
     </div>`;
 }
@@ -989,9 +1501,16 @@ function dealCard(d) {
     </div>`;
 }
 
+function taxChip(contact) {
+  if (contact?.taxExempt) {
+    const cert = contact.resaleCertificate ? ` · ${contact.resaleCertificate}` : '';
+    return pill(`Exempt${cert}`, 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200');
+  }
+  return pill(contact?.shipZip ? `Taxable · ${contact.shipZip}` : 'Taxable', ORDER_STATUS_CLASS.Draft);
+}
 function renderContacts(q) {
-  const filtered = state.contacts.filter(c =>
-    !q || c.name.toLowerCase().includes(q) || (c.company || '').toLowerCase().includes(q) || (c.email || '').toLowerCase().includes(q)
+  const filtered = scopeList(state.contacts).filter(c =>
+    !q || [c.name, c.company, c.email, c.resaleCertificate, c.shipZip].join(' ').toLowerCase().includes(q)
   );
   const body = filtered.length === 0
     ? `<div class="${CARD}">${q
@@ -999,40 +1518,44 @@ function renderContacts(q) {
         : emptyState('fa-users', 'No accounts yet', 'Add a contractor, plant, OEM, or municipal buyer.', 'Add contact', 'openAddContact()')}</div>`
     : responsiveList(
         filtered.map(c => `
-          <div class="flex items-center gap-3 p-3">
+          <div class="flex items-center gap-3 p-3 cursor-pointer" data-action="edit-contact" data-id="${escapeHtml(c.id)}">
             ${avatarChip(c.name)}
             <div class="min-w-0 flex-1">
               <div class="font-medium text-slate-800 dark:text-slate-100 truncate">${escapeHtml(c.name)}</div>
               <div class="text-xs text-slate-500 dark:text-slate-400 truncate">${escapeHtml(c.company || '—')}${c.title ? ` · ${escapeHtml(c.title)}` : ''}</div>
-              <div class="text-xs text-slate-400 dark:text-slate-500 truncate">${escapeHtml(c.email)}</div>
+              <div class="mt-1 flex flex-wrap gap-1">${taxChip(c)}</div>
+              ${branchTag(c)}
             </div>
           </div>`).join(''),
         dataTable(
-          ['Name', 'Company', 'Email', 'Title'],
+          ['Name', 'Company', 'Tax', 'Title'],
           filtered.map(c => `
-            <tr class="${ROW}">
+            <tr class="${ROW} cursor-pointer" data-action="edit-contact" data-id="${escapeHtml(c.id)}">
               <td class="px-4 py-3">
                 <div class="flex items-center gap-3 min-w-0">
                   ${avatarChip(c.name)}
-                  <span class="font-medium text-slate-800 dark:text-slate-100 truncate">${escapeHtml(c.name)}</span>
+                  <span class="min-w-0">
+                    <span class="block font-medium text-slate-800 dark:text-slate-100 truncate">${escapeHtml(c.name)}</span>
+                    ${branchTag(c)}
+                  </span>
                 </div>
               </td>
               <td class="px-4 py-3 text-slate-700 dark:text-slate-300">${escapeHtml(c.company)}</td>
-              <td class="px-4 py-3 text-slate-600 dark:text-slate-300">${escapeHtml(c.email)}</td>
-              <td class="px-4 py-3 text-slate-500 dark:text-slate-400">${escapeHtml(c.title)}</td>
+              <td class="px-4 py-3">${taxChip(c)}</td>
+              <td class="px-4 py-3 text-slate-500 dark:text-slate-400">${escapeHtml(c.title || '')}</td>
             </tr>`).join(''),
           'min-w-[40rem]'
         )
       );
   return `
     <div class="space-y-4">
-      ${pageHeader('Contacts', `${filtered.length} buyers across contractors, plants, OEMs, and municipalities`, 'Contact', 'openAddContact()')}
+      ${pageHeader('Contacts', `${escapeHtml(scopeLabel())} · ${filtered.length} buyers. Exemption and resale certificates sit on the account.`, 'Contact', 'openAddContact()')}
       ${body}
     </div>`;
 }
 
 function renderTasks(q) {
-  const filtered = state.tasks.filter(t => !q || t.title.toLowerCase().includes(q));
+  const filtered = scopeList(state.tasks).filter(t => !q || t.title.toLowerCase().includes(q));
   const rows = filtered.map(t => `
     <div class="flex items-center gap-4 p-4 border-b border-slate-100 last:border-b-0 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/60">
       <input type="checkbox" data-task="${t.id}" class="task-check h-5 w-5 accent-blue-600" ${t.done ? 'checked' : ''}>
@@ -1087,9 +1610,14 @@ function setupDragDrop() {
     });
   });
 }
-function addActivity(text) {
-  state.activities.unshift({ id: uid(), text, time: 'Just now' });
-  if (state.activities.length > 20) state.activities.pop();
+function addActivity(text, branchId) {
+  state.activities.unshift({
+    id: uid(),
+    text,
+    time: 'Just now',
+    branchId: branchId || writingBranch(),
+  });
+  if (state.activities.length > 40) state.activities.pop();
 }
 
 function quoteActions(q) {
@@ -1114,7 +1642,7 @@ function quoteMatches(q, quote) {
   return [quote.quoteNumber, quote.status, quote.notes, c?.name, c?.company, skus].join(' ').toLowerCase().includes(q);
 }
 function renderQuotes(q) {
-  const filtered = state.quotes.filter(item => quoteMatches(q, item))
+  const filtered = scopeList(state.quotes).filter(item => quoteMatches(q, item))
     .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || String(b.quoteNumber).localeCompare(String(a.quoteNumber)));
   const chips = statusChips(QUOTE_STATUSES, quoteUi.status, 'quote-status');
   const body = filtered.length === 0
@@ -1134,7 +1662,8 @@ function renderQuotes(q) {
                 </div>
                 <div class="text-right shrink-0">
                   <div class="text-sm font-medium tabular-nums">${formatMoney(item.total)}</div>
-                  <div class="mt-1">${pill(item.status, QUOTE_STATUS_CLASS[item.status] || ORDER_STATUS_CLASS.Draft)}</div>
+                  <div class="text-[11px] text-slate-400 dark:text-slate-500">${item.taxExempt ? 'Exempt' : `Tax ${formatMoney(item.taxAmount || 0)}`}</div>
+                  <div class="mt-1 flex flex-col items-end gap-1">${pill(item.status, QUOTE_STATUS_CLASS[item.status] || ORDER_STATUS_CLASS.Draft)}${pill(item.paymentStatus || 'Unpaid', PAY_STATUS_CLASS[item.paymentStatus] || PAY_STATUS_CLASS.Unpaid)}</div>
                 </div>
               </div>
               <div class="flex items-center justify-between gap-2">
@@ -1144,23 +1673,26 @@ function renderQuotes(q) {
             </div>`;
         }).join(''),
         dataTable(
-          ['Quote', 'Customer', 'Status', 'Expires', 'Lines', 'Total', 'Margin', '<span class="sr-only">Actions</span>'],
+          ['Quote', 'Customer', 'Status', 'Expires', 'Lines', 'Total', 'Payment', '<span class="sr-only">Actions</span>'],
           filtered.map(item => {
             const bits = customerBits(item.contactId);
             const past = (isPastDate(item.expiryDate) && item.status !== 'Converted') || item.status === 'Expired';
-            const totals = priceOut(item.items);
             return `
               <tr class="${ROW} cursor-pointer" data-action="edit-quote" data-id="${escapeHtml(item.id)}">
                 <td class="px-4 py-3 font-medium text-slate-800 dark:text-slate-100 whitespace-nowrap">${escapeHtml(item.quoteNumber)}</td>
                 <td class="px-4 py-3">
                   <div class="text-slate-800 dark:text-slate-100">${escapeHtml(bits.name)}</div>
                   <div class="text-xs text-slate-400 dark:text-slate-500">${escapeHtml(bits.company)}</div>
+                  ${branchTag(item)}
                 </td>
                 <td class="px-4 py-3">${pill(item.status, QUOTE_STATUS_CLASS[item.status] || ORDER_STATUS_CLASS.Draft)}</td>
                 <td class="px-4 py-3 whitespace-nowrap ${past ? 'text-rose-600 dark:text-rose-300' : 'text-slate-600 dark:text-slate-300'}">${escapeHtml(item.expiryDate || '—')}</td>
                 <td class="px-4 py-3 text-slate-600 dark:text-slate-300">${(item.items || []).length}</td>
-                <td class="px-4 py-3 font-medium tabular-nums">${formatMoney(item.total)}</td>
-                <td class="px-4 py-3 text-slate-600 dark:text-slate-300 tabular-nums">${totals.marginPct == null ? '—' : formatPct(totals.marginPct)}</td>
+                <td class="px-4 py-3 font-medium tabular-nums">
+                  <div>${formatMoney(item.total)}</div>
+                  <div class="text-[11px] font-normal text-slate-400 dark:text-slate-500">${item.taxExempt ? 'Exempt' : `Tax ${formatMoney(item.taxAmount || 0)}`}</div>
+                </td>
+                <td class="px-4 py-3">${pill(item.paymentStatus || 'Unpaid', PAY_STATUS_CLASS[item.paymentStatus] || PAY_STATUS_CLASS.Unpaid)}</td>
                 <td class="px-4 py-3">${quoteActions(item)}</td>
               </tr>`;
           }).join(''),
@@ -1169,7 +1701,7 @@ function renderQuotes(q) {
       );
   return `
     <div class="space-y-4">
-      ${pageHeader('Quotes', 'Commercial quotes with line items. The pipeline stays the opportunity — convert a quote when it becomes a release.', 'Quote', 'openAddQuote()')}
+      ${pageHeader('Quotes', `${escapeHtml(scopeLabel())} · line items, Michigan tax, then a release when the job is ready.`, can('edit-quote') ? 'Quote' : '', can('edit-quote') ? 'openAddQuote()' : '')}
       ${chips}
       ${body}
     </div>`;
@@ -1190,7 +1722,7 @@ function catalogTree() {
   return sections;
 }
 function filterProducts({ section, sub, mfr, q }) {
-  return state.products.filter(p => {
+  return state.products.filter(productInScope).filter(p => {
     if (section && productSection(p) !== section) return false;
     if (sub && productSub(p) !== sub) return false;
     if (mfr && p.manufacturer !== mfr) return false;
@@ -1205,7 +1737,7 @@ function sortProducts(list) {
     if (by === 'sku') return a.sku.localeCompare(b.sku);
     if (by === 'price-asc') return a.price - b.price || a.name.localeCompare(b.name);
     if (by === 'price-desc') return b.price - a.price || a.name.localeCompare(b.name);
-    if (by === 'stock') return a.stock - b.stock || a.name.localeCompare(b.name);
+    if (by === 'stock') return onHand(a) - onHand(b) || a.name.localeCompare(b.name);
     if (by === 'manufacturer') return (a.manufacturer || '').localeCompare(b.manufacturer || '') || a.name.localeCompare(b.name);
     return a.name.localeCompare(b.name);
   });
@@ -1247,8 +1779,11 @@ function pagerHtml(page, pages, total) {
 }
 function stockText(p) {
   const uom = p.uom || 'ea';
-  if (p.stock < 0) return `${Math.abs(p.stock)} ${uom} backorder`;
-  return `${p.stock} ${uom}`;
+  const qty = onHand(p);
+  const body = qty < 0 ? `${Math.abs(qty)} ${uom} backorder` : `${qty} ${uom}`;
+  if (activeBranchId()) return body;
+  const parts = BRANCHES.filter(branch => branchCarries(p, branch.id)).map(branch => `${branch.short} ${onHand(p, branch.id)}`);
+  return parts.length > 1 ? `${body} total · ${parts.join(' · ')}` : body;
 }
 function renderProducts(q) {
   if (catalogUi.query !== q) {
@@ -1309,7 +1844,7 @@ function renderProducts(q) {
     : `
       ${responsiveList(
         pageRows.map(p => {
-          const low = p.stock <= p.reorderLevel;
+          const low = isLowStock(p);
           return `
             <div class="p-3 cursor-pointer ${low ? 'bg-orange-50 dark:bg-orange-950/30' : ''}" data-action="edit-product" data-id="${escapeHtml(p.id)}">
               <div class="flex items-start justify-between gap-3">
@@ -1329,7 +1864,7 @@ function renderProducts(q) {
         dataTable(
           ['SKU', 'Product', 'Manufacturer', 'Price', 'On hand', 'Reorder', '<span class="sr-only">Actions</span>'],
           pageRows.map(p => `
-            <tr class="${ROW} cursor-pointer ${p.stock <= p.reorderLevel ? 'bg-orange-50 hover:bg-orange-100/70 dark:bg-orange-950/30 dark:hover:bg-orange-950/50' : ''}" data-action="edit-product" data-id="${escapeHtml(p.id)}">
+            <tr class="${ROW} cursor-pointer ${isLowStock(p) ? 'bg-orange-50 hover:bg-orange-100/70 dark:bg-orange-950/30 dark:hover:bg-orange-950/50' : ''}" data-action="edit-product" data-id="${escapeHtml(p.id)}">
               <td class="px-4 py-3 font-mono text-xs text-slate-600 dark:text-slate-300 whitespace-nowrap">${escapeHtml(p.sku)}</td>
               <td class="px-4 py-3">
                 <div class="font-medium text-slate-800 dark:text-slate-100">${escapeHtml(p.name)}</div>
@@ -1337,7 +1872,7 @@ function renderProducts(q) {
               </td>
               <td class="px-4 py-3 text-slate-600 dark:text-slate-300">${escapeHtml(p.manufacturer || '—')}</td>
               <td class="px-4 py-3 tabular-nums whitespace-nowrap">${formatMoney(p.price)}</td>
-              <td class="px-4 py-3 font-medium whitespace-nowrap ${p.stock <= p.reorderLevel ? 'text-orange-600 dark:text-orange-300' : ''}">${escapeHtml(stockText(p))}</td>
+              <td class="px-4 py-3 font-medium whitespace-nowrap ${isLowStock(p) ? 'text-orange-600 dark:text-orange-300' : ''}">${escapeHtml(stockText(p))}</td>
               <td class="px-4 py-3 text-slate-500 dark:text-slate-400">${p.reorderLevel} ${escapeHtml(p.uom || '')}</td>
               <td class="px-4 py-3">${productActions(p)}</td>
             </tr>`).join(''),
@@ -1345,10 +1880,11 @@ function renderProducts(q) {
         )
       )}
       ${pagerHtml(catalogUi.page, pages, rows.length)}`;
-  const sectionCount = new Set(state.products.map(productSection)).size;
+  const visibleProducts = state.products.filter(productInScope);
+  const sectionCount = new Set(visibleProducts.map(productSection)).size;
   return `
     <div class="space-y-4">
-      ${pageHeader('Products & Inventory', `${state.products.length} SKUs across ${sectionCount} sections · low stock highlighted`, 'Product', 'openAddProduct()')}
+      ${pageHeader('Products & Inventory', `${escapeHtml(scopeLabel())} · ${visibleProducts.length} SKUs across ${sectionCount} sections · on-hand is this branch`, can('edit-product') ? 'Product' : '', can('edit-product') ? 'openAddProduct()' : '')}
       <div class="flex flex-col lg:flex-row gap-4 items-start">
         ${nav}
         <div class="flex-1 min-w-0 space-y-3 w-full">
@@ -1378,7 +1914,7 @@ function orderMatches(q, order) {
   return [order.orderNumber, order.status, order.customerPo, order.jobName, order.notes, c?.name, c?.company, skus, from].join(' ').toLowerCase().includes(q);
 }
 function renderOrders(q) {
-  const filtered = state.orders.filter(o => orderMatches(q, o))
+  const filtered = scopeList(state.orders).filter(o => orderMatches(q, o))
     .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || String(b.orderNumber).localeCompare(String(a.orderNumber)));
   const chips = statusChips(ORDER_STATUSES, orderUi.status, 'order-status');
   const body = filtered.length === 0
@@ -1398,14 +1934,18 @@ function renderOrders(q) {
                 </div>
                 <div class="text-right shrink-0">
                   <div class="text-sm font-medium tabular-nums">${formatMoney(o.total)}</div>
-                  <div class="mt-1">${pill(o.status, ORDER_STATUS_CLASS[o.status] || ORDER_STATUS_CLASS.Draft)}</div>
+                  <div class="text-[11px] text-slate-400 dark:text-slate-500">${o.taxExempt ? 'Exempt' : `Tax ${formatMoney(o.taxAmount || 0)}`}</div>
+                  <div class="mt-1 flex flex-col items-end gap-1">
+                    ${pill(o.status, ORDER_STATUS_CLASS[o.status] || ORDER_STATUS_CLASS.Draft)}
+                    ${pill(o.paymentStatus || 'Unpaid', PAY_STATUS_CLASS[o.paymentStatus] || PAY_STATUS_CLASS.Unpaid)}
+                  </div>
                 </div>
               </div>
               <div class="flex justify-end">${orderActions(o)}</div>
             </div>`;
         }).join(''),
         dataTable(
-          ['Order', 'Customer', 'Job / PO', 'Status', 'Lines', 'Total', '<span class="sr-only">Actions</span>'],
+          ['Order', 'Customer', 'Job / PO', 'Status', 'Lines', 'Total', 'Payment', '<span class="sr-only">Actions</span>'],
           filtered.map(o => {
             const bits = customerBits(o.contactId);
             const from = o.quoteId ? quoteById(o.quoteId) : null;
@@ -1418,6 +1958,7 @@ function renderOrders(q) {
                 <td class="px-4 py-3">
                   <div>${escapeHtml(bits.name)}</div>
                   <div class="text-xs text-slate-400 dark:text-slate-500">${escapeHtml(bits.company)}</div>
+                  ${branchTag(o)}
                 </td>
                 <td class="px-4 py-3">
                   <div class="text-slate-700 dark:text-slate-200">${escapeHtml(o.jobName || '—')}</div>
@@ -1425,7 +1966,14 @@ function renderOrders(q) {
                 </td>
                 <td class="px-4 py-3">${pill(o.status, ORDER_STATUS_CLASS[o.status] || ORDER_STATUS_CLASS.Draft)}</td>
                 <td class="px-4 py-3 text-slate-600 dark:text-slate-300">${(o.items || []).length}</td>
-                <td class="px-4 py-3 font-medium tabular-nums">${formatMoney(o.total)}</td>
+                <td class="px-4 py-3 font-medium tabular-nums">
+                  <div>${formatMoney(o.total)}</div>
+                  <div class="text-[11px] font-normal text-slate-400 dark:text-slate-500">${o.taxExempt ? 'Exempt' : `Tax ${formatMoney(o.taxAmount || 0)}`}</div>
+                </td>
+                <td class="px-4 py-3">
+                  ${pill(o.paymentStatus || 'Unpaid', PAY_STATUS_CLASS[o.paymentStatus] || PAY_STATUS_CLASS.Unpaid)}
+                  ${o.paymentMethod ? `<div class="mt-1 text-[11px] text-slate-400 dark:text-slate-500">${escapeHtml(methodLabel(o.paymentMethod))}</div>` : ''}
+                </td>
                 <td class="px-4 py-3">${orderActions(o)}</td>
               </tr>`;
           }).join(''),
@@ -1434,7 +1982,7 @@ function renderOrders(q) {
       );
   return `
     <div class="space-y-4">
-      ${pageHeader('Orders', `${state.orders.length} releases and counter tickets · stock commits when a ticket leaves Draft`, 'Order', 'openAddOrder()')}
+      ${pageHeader('Orders', `${escapeHtml(scopeLabel())} · ${scopeList(state.orders).length} releases · tax and payment status on each ticket`, 'Order', 'openAddOrder()')}
       ${chips}
       ${body}
     </div>`;
@@ -1446,7 +1994,7 @@ function deliveryBlob(d) {
   return [d.deliveryNumber, d.status, d.shipTo, d.jobSite, d.carrier, d.tracking, d.window, d.notes, order?.orderNumber, order?.jobName, c?.name, c?.company].join(' ').toLowerCase();
 }
 function renderDeliveries(q) {
-  const filtered = state.deliveries.filter(d => !q || deliveryBlob(d).includes(q));
+  const filtered = scopeList(state.deliveries).filter(d => !q || deliveryBlob(d).includes(q));
   const board = (q && filtered.length === 0)
     ? `<div class="${CARD}">${emptyState('fa-truck', 'No matching deliveries', `Nothing matches “${escapeHtml(q)}”.`)}</div>`
     : `<div class="flex gap-3 sm:gap-4 overflow-x-auto pb-4">
@@ -1472,7 +2020,7 @@ function renderDeliveries(q) {
       </div>`;
   return `
     <div class="space-y-4">
-      ${pageHeader('Deliveries', 'Job-site drops and counter runs, tied back to the order. Drag a card to change status.', 'Delivery', 'openAddDelivery()')}
+      ${pageHeader('Deliveries', `${escapeHtml(scopeLabel())} · job-site drops and counter runs tied back to the order`, 'Delivery', 'openAddDelivery()')}
       ${board}
     </div>`;
 }
@@ -1597,35 +2145,67 @@ function closeModal() {
 }
 window.closeModal = closeModal;
 
-function openAddContact() {
-  openModal('Add Contact', `
+function openContactModal(record) {
+  if (!can('edit-contact')) {
+    deny('Contacts are maintained by counter, sales, manager, and admin.');
+    return;
+  }
+  const branch = record?.branchId || writingBranch();
+  const branchControl = isManager() && !record
+    ? `<label class="block"><span class="${LABEL}">Branch</span>
+        <select name="branchId" class="${FIELD}">
+          ${BRANCHES.map(item => `<option value="${item.id}" ${item.id === branch ? 'selected' : ''}>${escapeHtml(item.name)} · ${item.id}</option>`).join('')}
+        </select>
+      </label>`
+    : `<input type="hidden" name="branchId" value="${escapeHtml(branch)}" />
+       <p class="text-xs text-slate-400 dark:text-slate-500">${escapeHtml(branchName(branch))} · ${escapeHtml(branch)}</p>`;
+  openModal(record ? 'Edit contact' : 'Add Contact', `
     <form id="contact-form" class="space-y-3">
-      <input name="name" required placeholder="Full name" class="${FIELD}" />
-      <input name="email" type="email" required placeholder="Email" class="${FIELD}" />
-      <input name="company" placeholder="Company" class="${FIELD}" />
-      <input name="title" placeholder="Title" class="${FIELD}" />
+      ${branchControl}
+      <input name="name" required placeholder="Full name" value="${escapeHtml(record?.name || '')}" class="${FIELD}" />
+      <input name="email" type="email" required placeholder="Email" value="${escapeHtml(record?.email || '')}" class="${FIELD}" />
+      <input name="company" placeholder="Company" value="${escapeHtml(record?.company || '')}" class="${FIELD}" />
+      <input name="title" placeholder="Title" value="${escapeHtml(record?.title || '')}" class="${FIELD}" />
+      <input name="phone" placeholder="Phone" value="${escapeHtml(record?.phone || '')}" class="${FIELD}" />
+      <label class="block"><span class="${LABEL}">Ship-to ZIP</span>
+        <input name="shipZip" inputmode="numeric" maxlength="10" value="${escapeHtml(record?.shipZip || branchById(branch)?.zip || '')}" placeholder="48060" class="${FIELD}" />
+      </label>
+      <label class="flex items-center gap-2 text-sm">
+        <input name="taxExempt" type="checkbox" class="h-4 w-4 accent-blue-600" ${record?.taxExempt ? 'checked' : ''} />
+        Tax exempt
+      </label>
+      <label class="block"><span class="${LABEL}">Resale / exemption certificate</span>
+        <input name="resaleCertificate" value="${escapeHtml(record?.resaleCertificate || '')}" placeholder="MI-RS- or GOV-" class="${FIELD}" />
+      </label>
+      <p class="text-[11px] text-slate-400 dark:text-slate-500">Exemption is copied onto new quotes and orders when you pick this customer. It does not rewrite tickets already saved.</p>
       ${formActions('Save')}
     </form>
-  `);
+  `, 'lg');
   document.getElementById('contact-form').onsubmit = e => {
     e.preventDefault();
     const fd = new FormData(e.target);
-    const name = fd.get('name');
-    state.contacts.push({
-      id: uid(),
-      name,
-      email: fd.get('email'),
-      company: fd.get('company') || '',
-      title: fd.get('title') || '',
-      phone: ''
-    });
-    addActivity(`Added contact ${name}`);
+    const name = String(fd.get('name') || '');
+    const contact = record || { id: uid() };
+    contact.name = name;
+    contact.email = String(fd.get('email') || '');
+    contact.company = String(fd.get('company') || '');
+    contact.title = String(fd.get('title') || '');
+    contact.phone = String(fd.get('phone') || '');
+    contact.branchId = String(fd.get('branchId') || branch);
+    contact.shipZip = normalizeZip(fd.get('shipZip')) || branchById(contact.branchId)?.zip || '';
+    contact.taxExempt = !!e.target.taxExempt?.checked;
+    contact.resaleCertificate = String(fd.get('resaleCertificate') || '');
+    if (!record) {
+      state.contacts.push(contact);
+      addActivity(`Added contact ${name}`, contact.branchId);
+    }
     save();
     closeModal();
     toast('Contact saved', name);
     render();
   };
 }
+function openAddContact() { openContactModal(null); }
 function openAddDeal() {
   openModal('Add Deal', `
     <form id="deal-form" class="space-y-3">
@@ -1645,15 +2225,18 @@ function openAddDeal() {
     e.preventDefault();
     const fd = new FormData(e.target);
     const title = fd.get('title');
+    const contactId = fd.get('contactId');
+    const contact = contactById(contactId);
     state.deals.push({
       id: uid(),
       title,
       value: Number(fd.get('value')),
-      contactId: fd.get('contactId'),
+      contactId,
+      branchId: contact?.branchId || writingBranch(),
       stage: fd.get('stage'),
       closeDate: fd.get('closeDate') || ''
     });
-    addActivity(`Created deal "${title}"`);
+    addActivity(`Created deal "${title}"`, contact?.branchId || writingBranch());
     save();
     closeModal();
     toast('Deal created', title);
@@ -1676,7 +2259,8 @@ function openAddTask() {
       id: uid(),
       title,
       due: fd.get('due') || '',
-      done: false
+      done: false,
+      branchId: writingBranch(),
     });
     save();
     closeModal();
@@ -1695,17 +2279,27 @@ function linesFrom(items) {
     price: item.price != null && item.price !== '' ? item.price : (productById(item.productId)?.price || 0),
   }));
 }
-function summaryHtml(items) {
+function formatMoneyExact(n) {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(Number(n) || 0);
+}
+function summaryHtml(items, taxCtx) {
   const totals = priceOut(items);
+  const priced = taxQuote(totals.subtotal, taxCtx || {});
   const margin = totals.margin == null
     ? `<div class="flex justify-between gap-3 text-slate-400"><span>Est. margin</span><span>Add cost on each SKU</span></div>`
     : `<div class="flex justify-between gap-3"><span class="text-slate-500 dark:text-slate-400">Est. margin</span><span class="font-medium text-emerald-700 dark:text-emerald-300 tabular-nums">${formatMoney(totals.margin)} · ${formatPct(totals.marginPct)}</span></div>`;
   return `
     <div class="rounded-xl bg-slate-50 dark:bg-slate-800/70 px-3 py-3 space-y-1.5 text-sm">
-      <div class="flex justify-between gap-3"><span class="text-slate-500 dark:text-slate-400">Subtotal</span><span class="tabular-nums">${formatMoney(totals.subtotal)}</span></div>
+      <div class="flex justify-between gap-3"><span class="text-slate-500 dark:text-slate-400">Subtotal</span><span class="tabular-nums">${formatMoneyExact(priced.subtotal)}</span></div>
+      <div class="flex justify-between gap-3"><span class="text-slate-500 dark:text-slate-400">Tax</span><span class="tabular-nums text-right">${formatMoneyExact(priced.taxAmount)}<span class="block text-[11px] text-slate-400 dark:text-slate-500">${escapeHtml(taxCaption(taxCtx || {}))}</span></span></div>
       ${margin}
-      <div class="flex justify-between gap-3 border-t border-slate-200 dark:border-slate-700 pt-1.5"><span class="font-medium">Total</span><span class="font-semibold tabular-nums">${formatMoney(totals.total)}</span></div>
-      <p class="text-[11px] text-slate-400 dark:text-slate-500">Counter total — tax and freight are not on this ticket, so subtotal and total match.</p>
+      <div class="flex justify-between gap-3 border-t border-slate-200 dark:border-slate-700 pt-1.5"><span class="font-medium">Total</span><span class="font-semibold tabular-nums">${formatMoneyExact(priced.total)}</span></div>
+      <p class="text-[11px] text-slate-400 dark:text-slate-500">Demo Michigan tax from the ship-to ZIP. Margin stays pre-tax. Nothing here calls Stripe Tax.</p>
     </div>`;
 }
 function lineRowHtml(line) {
@@ -1740,6 +2334,15 @@ function paintLine(row, line) {
   const el = row.querySelector('.line-total');
   if (el) el.textContent = formatMoney(lineTotal(line.qty, line.price));
 }
+function currentTaxCtx() {
+  const form = document.getElementById('doc-form');
+  if (!form) return { shipZip: '', taxExempt: false, resaleCertificate: '' };
+  return {
+    shipZip: form.shipZip ? form.shipZip.value : '',
+    taxExempt: !!(form.taxExempt && form.taxExempt.checked),
+    resaleCertificate: form.resaleCertificate ? form.resaleCertificate.value : '',
+  };
+}
 function paintSummary(lines) {
   const el = document.getElementById('doc-summary');
   if (!el) return;
@@ -1747,7 +2350,7 @@ function paintSummary(lines) {
     productId: l.productId,
     qty: Number(l.qty) || 0,
     price: Number(l.price) || 0
-  })));
+  })), currentTaxCtx());
 }
 function setFormError(msg) {
   const el = document.getElementById('form-error');
@@ -1801,14 +2404,99 @@ function docFooter(kind, record) {
       <button type="submit" class="px-4 py-2 text-sm bg-primary hover:bg-blue-700 text-white rounded-lg">Save</button>
     </div>`;
 }
+function docBranch(record) {
+  return record?.branchId || writingBranch();
+}
+function branchField(record) {
+  const current = docBranch(record);
+  if (!isManager()) {
+    return `<input type="hidden" name="branchId" value="${escapeHtml(current)}" />`;
+  }
+  if (record) {
+    return `<input type="hidden" name="branchId" value="${escapeHtml(current)}" />
+      <p class="sm:col-span-2 text-xs text-slate-400 dark:text-slate-500">${escapeHtml(branchName(current))} · ${escapeHtml(current)}</p>`;
+  }
+  return `<label class="block sm:col-span-2"><span class="${LABEL}">Branch</span>
+    <select name="branchId" class="${FIELD}">
+      ${BRANCHES.map(branch => `<option value="${branch.id}" ${branch.id === current ? 'selected' : ''}>${escapeHtml(branch.name)} · ${branch.id}</option>`).join('')}
+    </select>
+  </label>`;
+}
+function taxFields(record) {
+  const zip = record?.shipZip || branchById(docBranch(record))?.zip || '';
+  return `
+      <label class="block"><span class="${LABEL}">Ship-to ZIP</span>
+        <input name="shipZip" inputmode="numeric" maxlength="10" value="${escapeHtml(zip)}" placeholder="48060" class="${FIELD}" />
+      </label>
+      <label class="flex items-center gap-2 sm:pt-5">
+        <input name="taxExempt" type="checkbox" class="h-4 w-4 accent-blue-600" ${record?.taxExempt ? 'checked' : ''} />
+        <span class="text-sm">Tax exempt</span>
+      </label>
+      <label class="block sm:col-span-2"><span class="${LABEL}">Resale / exemption certificate</span>
+        <input name="resaleCertificate" value="${escapeHtml(record?.resaleCertificate || '')}" placeholder="MI-RS-22018 or GOV-SCT-DPW" class="${FIELD}" />
+      </label>`;
+}
+function formatWhen(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value || '';
+  return date.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+function payPanelHtml(record) {
+  if (!record) {
+    return `<p class="text-[11px] text-slate-400 dark:text-slate-500">Save the ticket, then collect payment. Card is a demo tender — no card number field.</p>`;
+  }
+  const status = record.paymentStatus || 'Unpaid';
+  const net = paymentNet(record);
+  const balance = Math.max(0, moneyRound((Number(record.total) || 0) - net));
+  const rows = (record.payments || []).map(pay => `
+    <li class="flex justify-between gap-3 text-xs">
+      <span class="min-w-0 text-slate-500 dark:text-slate-400">${escapeHtml(methodLabel(pay.method))} · ${escapeHtml(pay.userName || '')} · ${escapeHtml(formatWhen(pay.at))}</span>
+      <span class="shrink-0 tabular-nums ${Number(pay.amount) < 0 ? 'text-rose-600 dark:text-rose-300' : ''}">${formatMoneyExact(pay.amount)}</span>
+    </li>
+    ${pay.note ? `<li class="text-[11px] text-slate-400 dark:text-slate-500">${escapeHtml(pay.note)}</li>` : ''}`).join('');
+  const collect = can('pay') && balance > 0.009 && status !== 'Refunded'
+    ? `<button type="button" data-doc-action="toggle-pay" class="text-sm font-medium text-primary hover:text-blue-700">Collect payment</button>
+       <div id="collect-box" class="is-collapsed grid sm:grid-cols-2 gap-2 pt-1">
+         <label class="block"><span class="${LABEL}">Amount</span>
+           <input name="payAmount" type="number" min="0.01" step="0.01" value="${balance.toFixed(2)}" class="${FIELD}" />
+         </label>
+         <label class="block"><span class="${LABEL}">Method</span>
+           <select name="payMethod" class="${FIELD}">
+             <option>Cash</option>
+             <option>Check</option>
+             <option value="Card">Card (demo)</option>
+             <option value="Account">Account (on account)</option>
+           </select>
+         </label>
+         <p id="card-note" class="hidden sm:col-span-2 text-[11px] text-slate-500 dark:text-slate-400">Processed via Stripe (demo). This does not charge a card, and there is nowhere to type a card number.</p>
+         <div class="sm:col-span-2"><button type="button" data-doc-action="apply-payment" class="px-3 py-1.5 text-sm bg-primary hover:bg-blue-700 text-white rounded-lg">Record payment</button></div>
+       </div>`
+    : '';
+  const refund = can('refund') && net > 0.009
+    ? `<button type="button" data-doc-action="refund" class="text-sm font-medium text-rose-600 dark:text-rose-300">Refund</button>`
+    : '';
+  return `
+    <div id="pay-panel" class="rounded-xl border border-slate-200 dark:border-slate-700 px-3 py-3 space-y-2">
+      <div class="flex items-center justify-between gap-2">
+        <span class="text-sm font-medium">Payment</span>
+        ${pill(status, PAY_STATUS_CLASS[status] || PAY_STATUS_CLASS.Unpaid)}
+      </div>
+      <div class="flex justify-between text-sm"><span class="text-slate-500 dark:text-slate-400">Paid</span><span class="tabular-nums">${formatMoneyExact(Math.max(0, net))}</span></div>
+      <div class="flex justify-between text-sm"><span class="text-slate-500 dark:text-slate-400">Balance</span><span class="tabular-nums">${formatMoneyExact(balance)}</span></div>
+      ${rows ? `<ul class="space-y-1 border-t border-slate-100 dark:border-slate-800 pt-2">${rows}</ul>` : '<p class="text-[11px] text-slate-400 dark:text-slate-500">No tenders yet.</p>'}
+      <div class="flex flex-wrap items-center gap-3">${collect}${refund}</div>
+    </div>`;
+}
 function docFormHtml(kind, record) {
   const isQuote = kind === 'quote';
+  const branch = docBranch(record);
   const hint = isQuote
-    ? 'Converting saves this quote, creates a draft order with the same lines, and schedules a delivery stub.'
-    : 'Shelf stock commits when status is Confirmed, Shipped, or Delivered. Draft and Cancelled do not. A negative on-hand is a backorder.';
+    ? 'Converting copies lines, ship-to ZIP, and the exemption onto a draft order, and schedules a delivery stub.'
+    : 'Shelf stock at this branch commits when status is Confirmed, Shipped, or Delivered. Cancelling needs a manager. Card payments are a demo tender — never a real charge.';
   const fields = isQuote ? `
+      ${branchField(record)}
       <label class="block"><span class="${LABEL}">Customer</span>
-        <select name="contactId" required class="${FIELD}">${contactOptions(record?.contactId || '')}</select>
+        <select name="contactId" required class="${FIELD}">${contactOptions(record?.contactId || '', branch)}</select>
       </label>
       <label class="block"><span class="${LABEL}">Status</span>
         <select name="status" class="${FIELD}">${statusOptions(QUOTE_STATUSES, record?.status || 'Draft')}</select>
@@ -1816,11 +2504,13 @@ function docFormHtml(kind, record) {
       <label class="block sm:col-span-2"><span class="${LABEL}">Expiry</span>
         <input name="expiry" type="date" value="${escapeHtml(record?.expiryDate || '')}" class="${FIELD}" />
       </label>
+      ${taxFields(record)}
       <label class="block sm:col-span-2"><span class="${LABEL}">Notes</span>
         <textarea name="notes" rows="2" placeholder="Release notes, alternates, who has to approve" class="${FIELD}">${escapeHtml(record?.notes || '')}</textarea>
       </label>` : `
+      ${branchField(record)}
       <label class="block"><span class="${LABEL}">Customer</span>
-        <select name="contactId" required class="${FIELD}">${contactOptions(record?.contactId || '')}</select>
+        <select name="contactId" required class="${FIELD}">${contactOptions(record?.contactId || '', branch)}</select>
       </label>
       <label class="block"><span class="${LABEL}">Status</span>
         <select name="status" class="${FIELD}">${statusOptions(ORDER_STATUSES, record?.status || 'Draft')}</select>
@@ -1834,6 +2524,7 @@ function docFormHtml(kind, record) {
       <label class="block sm:col-span-2"><span class="${LABEL}">Job name</span>
         <input name="jobName" value="${escapeHtml(record?.jobName || '')}" placeholder="Hospital addition, pump station, panel shop" class="${FIELD}" />
       </label>
+      ${taxFields(record)}
       <label class="block sm:col-span-2"><span class="${LABEL}">Notes</span>
         <textarea name="notes" rows="2" placeholder="Release notes" class="${FIELD}">${escapeHtml(record?.notes || '')}</textarea>
       </label>`;
@@ -1856,6 +2547,7 @@ function docFormHtml(kind, record) {
         </button>
       </div>
       <div id="doc-summary"></div>
+      ${payPanelHtml(record)}
       <p id="form-error" class="hidden text-sm text-rose-600 dark:text-rose-300"></p>
       <p class="text-[11px] text-slate-400 dark:text-slate-500">${hint}</p>
       ${docFooter(kind, record)}
@@ -1867,7 +2559,7 @@ function openDocModal(kind, record) {
     ? (kind === 'quote' ? record.quoteNumber : record.orderNumber)
     : (kind === 'quote' ? 'New quote' : 'New order');
   openModal(title, docFormHtml(kind, record), 'xl');
-  activeDoc = { kind, lines };
+  activeDoc = { kind, lines, branchId: docBranch(record), record };
   const form = document.getElementById('doc-form');
   if (!form) return;
   renderDocLines(lines);
@@ -1879,6 +2571,36 @@ function openDocModal(kind, record) {
   form.addEventListener('submit', e => onDocSubmit(e, lines, kind, record, form));
 }
 function onDocField(e, lines) {
+  const name = e.target.name;
+  if (name === 'shipZip' || name === 'taxExempt' || name === 'resaleCertificate') {
+    paintSummary(lines);
+    return;
+  }
+  if (name === 'contactId' && e.type === 'change') {
+    const contact = contactById(e.target.value);
+    const form = e.target.form;
+    if (contact && form) {
+      if (form.shipZip) form.shipZip.value = contact.shipZip || '';
+      if (form.taxExempt) form.taxExempt.checked = !!contact.taxExempt;
+      if (form.resaleCertificate) form.resaleCertificate.value = contact.resaleCertificate || '';
+    }
+    paintSummary(lines);
+    return;
+  }
+  if (name === 'payMethod') {
+    const note = document.getElementById('card-note');
+    if (note) note.classList.toggle('hidden', e.target.value !== 'Card');
+    return;
+  }
+  if (name === 'branchId' && e.type === 'change') {
+    if (activeDoc) activeDoc.branchId = e.target.value;
+    const form = e.target.form;
+    if (form && form.contactId) form.contactId.innerHTML = contactOptions(form.contactId.value, e.target.value);
+    const branch = branchById(e.target.value);
+    if (form && form.shipZip && branch && !form.shipZip.value) form.shipZip.value = branch.zip;
+    paintSummary(lines);
+    return;
+  }
   if (e.type === 'change' && e.target.classList.contains('sku-search')) return;
   const row = e.target.closest('[data-line]');
   if (!row) return;
@@ -1974,6 +2696,19 @@ function onDocClick(e, lines, kind, record, form) {
     if (kind === 'order' && record) deleteOrder(record.id);
     return;
   }
+  if (action === 'toggle-pay') {
+    const box = document.getElementById('collect-box');
+    if (box) box.classList.toggle('is-collapsed');
+    return;
+  }
+  if (action === 'apply-payment') {
+    applyCollectedPayment(kind, record, form);
+    return;
+  }
+  if (action === 'refund') {
+    refundDocument(kind, record);
+    return;
+  }
   if (action === 'open-order') {
     const order = orderById(btn.dataset.id);
     closeModal();
@@ -2025,40 +2760,62 @@ function persistDoc(kind, record, form, lines) {
     uom: i.uom || 'ea',
     price: moneyRound(i.price)
   }));
-  const total = lineSum(items);
+  const branchId = String(fd.get('branchId') || record?.branchId || writingBranch());
+  const taxExempt = !!(form.taxExempt && form.taxExempt.checked);
+  const shipZip = String(fd.get('shipZip') || '');
+  const resaleCertificate = String(fd.get('resaleCertificate') || '');
   if (kind === 'quote') {
+    if (!can('edit-quote')) {
+      setFormError('Quotes are written by counter, sales, manager, and admin.');
+      return null;
+    }
     const quote = record || {
       id: uid(),
       quoteNumber: nextNumber(state.quotes, 'quoteNumber', 'Q-', 1001),
       date: today(),
-      orderId: null
+      orderId: null,
+      payments: []
     };
     quote.contactId = contactId;
+    quote.branchId = record?.branchId || branchId;
     quote.status = fd.get('status') || 'Draft';
     quote.expiryDate = fd.get('expiry') || '';
     quote.notes = String(fd.get('notes') || '');
     quote.items = items;
-    quote.subtotal = total;
-    quote.total = total;
+    quote.taxExempt = taxExempt;
+    quote.shipZip = shipZip;
+    quote.resaleCertificate = resaleCertificate;
+    quote.payments = quote.payments || [];
+    priceDoc(quote);
     if (!record) state.quotes.push(quote);
     return quote;
   }
-  const prev = record ? { status: record.status, items: cloneItems(record.items) } : null;
+  const nextStatus = fd.get('status') || 'Draft';
+  if (nextStatus === 'Cancelled' && record?.status !== 'Cancelled' && !can('void')) {
+    setFormError('Cancelling a ticket needs a manager or admin. This is a demo role gate, not server-side security.');
+    return null;
+  }
+  const prev = record ? { status: record.status, items: cloneItems(record.items), branchId: record.branchId } : null;
   const order = record || {
     id: uid(),
     orderNumber: nextNumber(state.orders, 'orderNumber', 'ORD-', 1001),
     date: fd.get('date') || today(),
-    quoteId: null
+    quoteId: null,
+    payments: []
   };
   order.contactId = contactId;
-  order.status = fd.get('status') || 'Draft';
+  order.branchId = record?.branchId || branchId;
+  order.status = nextStatus;
   order.date = fd.get('date') || order.date || today();
   order.customerPo = String(fd.get('customerPo') || '');
   order.jobName = String(fd.get('jobName') || '');
   order.notes = String(fd.get('notes') || '');
   order.items = items;
-  order.subtotal = total;
-  order.total = total;
+  order.taxExempt = taxExempt;
+  order.shipZip = shipZip;
+  order.resaleCertificate = resaleCertificate;
+  order.payments = order.payments || [];
+  priceDoc(order);
   if (!record) state.orders.push(order);
   syncOrderStock(prev, order);
   return order;
@@ -2073,8 +2830,13 @@ function onDocSubmit(e, lines, kind, record, form) {
   const prevStatus = record?.status;
   const saved = persistDoc(kind, record, form, lines);
   if (!saved) return;
-  if (created) addActivity(kind === 'quote' ? `Created quote ${saved.quoteNumber}` : `Created order ${saved.orderNumber}`);
-  else if (prevStatus && prevStatus !== saved.status) addActivity(`${saved.quoteNumber || saved.orderNumber} marked ${saved.status}`);
+  if (created) addActivity(kind === 'quote' ? `Created quote ${saved.quoteNumber}` : `Created order ${saved.orderNumber}`, saved.branchId);
+  else if (prevStatus && prevStatus !== saved.status) {
+    addActivity(`${saved.quoteNumber || saved.orderNumber} marked ${saved.status}`, saved.branchId);
+    if (kind === 'order' && saved.status === 'Cancelled') {
+      audit('void', `${saved.orderNumber} cancelled by ${session?.name || 'unknown'}`);
+    }
+  }
   if (kind === 'quote' && convert) {
     convertQuote(saved.id);
     return;
@@ -2090,6 +2852,81 @@ function onDocSubmit(e, lines, kind, record, form) {
   toast(kind === 'quote' ? 'Quote saved' : 'Order saved', kind === 'quote' ? saved.quoteNumber : saved.orderNumber);
   render();
 }
+function reopenDoc(kind, record) {
+  const fresh = kind === 'quote' ? quoteById(record.id) : orderById(record.id);
+  closeModal();
+  render();
+  if (fresh) openDocModal(kind, fresh);
+}
+function applyCollectedPayment(kind, record, form) {
+  if (!record) {
+    setFormError('Save the ticket before recording a payment.');
+    return;
+  }
+  if (!can('pay')) {
+    deny('Collecting payment is limited to counter, sales, manager, and admin.');
+    return;
+  }
+  const amount = moneyRound(form.payAmount && form.payAmount.value);
+  const method = form.payMethod ? form.payMethod.value : 'Cash';
+  const balance = Math.max(0, moneyRound((Number(record.total) || 0) - paymentNet(record)));
+  if (!(amount > 0)) {
+    setFormError('Enter a payment amount.');
+    return;
+  }
+  if (amount - balance > 0.009) {
+    setFormError(`That is above the open balance of ${formatMoneyExact(balance)}.`);
+    return;
+  }
+  const prev = record.paymentStatus || 'Unpaid';
+  const note = method === 'Card'
+    ? 'Processed via Stripe (demo)'
+    : (method === 'Account' ? 'On account' : '');
+  record.payments = record.payments || [];
+  record.payments.push({
+    id: uid(),
+    amount,
+    method,
+    at: new Date().toISOString(),
+    userId: session?.userId || '',
+    userName: session?.name || '',
+    note,
+  });
+  refreshPayment(record);
+  const label = record.quoteNumber || record.orderNumber;
+  audit('payment', `${label} ${prev} → ${record.paymentStatus} · ${methodLabel(method)} ${formatMoneyExact(amount)} · ${session?.name || ''}`);
+  addActivity(`${session?.name || 'Someone'} recorded ${formatMoneyExact(amount)} ${methodLabel(method)} on ${label}`, record.branchId);
+  save();
+  toast('Payment recorded', `${label} · ${record.paymentStatus}`);
+  reopenDoc(kind, record);
+}
+function refundDocument(kind, record) {
+  if (!record) return;
+  if (!can('refund')) {
+    deny('Refunds need a manager or admin. This demo gate is not server-side security.');
+    return;
+  }
+  const net = paymentNet(record);
+  if (!(net > 0)) return;
+  const label = record.quoteNumber || record.orderNumber;
+  if (!confirm(`Refund ${formatMoneyExact(net)} on ${label}? No card number is stored. This only updates the demo ticket.`)) return;
+  const prev = record.paymentStatus || 'Unpaid';
+  record.payments.push({
+    id: uid(),
+    amount: moneyRound(-net),
+    method: 'Refund',
+    at: new Date().toISOString(),
+    userId: session.userId,
+    userName: session.name,
+    note: 'Demo refund. No card number stored.',
+  });
+  refreshPayment(record);
+  audit('refund', `${label} ${prev} → ${record.paymentStatus} · ${formatMoneyExact(net)} · ${session.name}`);
+  addActivity(`${session.name} refunded ${formatMoneyExact(net)} on ${label}`, record.branchId);
+  save();
+  toast('Refund recorded', `${label} · ${record.paymentStatus}`);
+  reopenDoc(kind, record);
+}
 function openAddQuote() { openDocModal('quote', null); }
 function openEditQuote(id) {
   const quote = quoteById(id);
@@ -2103,6 +2940,10 @@ function openEditOrder(id) {
 function deleteQuote(id) {
   const quote = quoteById(id);
   if (!quote) return;
+  if (!can('delete')) {
+    deny('Deleting a quote needs a manager or admin. This demo gate is not server-side security.');
+    return;
+  }
   if (!confirm(`Delete ${quote.quoteNumber}?`)) return;
   state.quotes = state.quotes.filter(q => q.id != id);
   save();
@@ -2113,13 +2954,17 @@ function deleteQuote(id) {
 function deleteOrder(id) {
   const order = orderById(id);
   if (!order) return;
+  if (!can('delete')) {
+    deny('Deleting an order needs a manager or admin. This demo gate is not server-side security.');
+    return;
+  }
   const deliveries = state.deliveries.filter(d => d.orderId == id);
   const linked = state.quotes.find(q => q.orderId == id);
   let message = `Delete ${order.orderNumber}? Committed stock returns to the shelf.`;
   if (deliveries.length) message += ` ${deliveries.length} linked ${deliveries.length === 1 ? 'delivery stays' : 'deliveries stay'} on the board.`;
   if (linked) message += ` ${linked.quoteNumber} returns to Accepted.`;
   if (!confirm(message)) return;
-  syncOrderStock({ status: order.status, items: order.items }, null);
+  syncOrderStock({ status: order.status, items: order.items, branchId: order.branchId }, null);
   state.orders = state.orders.filter(o => o.id != id);
   if (linked) {
     linked.orderId = null;
@@ -2143,11 +2988,11 @@ function convertQuote(id) {
     return;
   }
   const items = cloneItems(quote.items);
-  const total = lineSum(items);
   const order = {
     id: uid(),
     orderNumber: nextNumber(state.orders, 'orderNumber', 'ORD-', 1001),
     contactId: quote.contactId,
+    branchId: quote.branchId || contactById(quote.contactId)?.branchId || writingBranch(),
     date: today(),
     status: 'Draft',
     customerPo: '',
@@ -2155,9 +3000,12 @@ function convertQuote(id) {
     notes: quote.notes || '',
     quoteId: quote.id,
     items,
-    subtotal: total,
-    total
+    shipZip: quote.shipZip || '',
+    taxExempt: !!quote.taxExempt,
+    resaleCertificate: quote.resaleCertificate || '',
+    payments: (quote.payments || []).map(pay => ({ ...pay, id: uid() })),
   };
+  priceDoc(order);
   state.orders.push(order);
   quote.status = 'Converted';
   quote.orderId = order.id;
@@ -2166,6 +3014,7 @@ function convertQuote(id) {
     deliveryNumber: nextNumber(state.deliveries, 'deliveryNumber', 'DEL-', 1001),
     orderId: order.id,
     contactId: quote.contactId,
+    branchId: order.branchId,
     shipTo: suggestShipTo(quote.contactId),
     jobSite: '',
     requestedDate: quote.expiryDate && !isPastDate(quote.expiryDate) ? quote.expiryDate : plusDays(7),
@@ -2176,7 +3025,7 @@ function convertQuote(id) {
     notes: `Stub from ${quote.quoteNumber}. Confirm ship-to and window.`
   };
   state.deliveries.push(delivery);
-  addActivity(`Converted ${quote.quoteNumber} to ${order.orderNumber}`);
+  addActivity(`Converted ${quote.quoteNumber} to ${order.orderNumber}`, order.branchId);
   save();
   closeModal();
   toast('Quote converted', `${order.orderNumber} · ${delivery.deliveryNumber}`);
@@ -2186,8 +3035,10 @@ function convertQuote(id) {
 function searchProducts(query) {
   const q = query.trim().toLowerCase();
   if (!q) return [];
+  const branch = activeDoc?.branchId || activeBranchId();
   const scored = [];
   state.products.forEach(p => {
+    if (branch && !branchCarries(p, branch)) return;
     const sku = p.sku.toLowerCase();
     const name = p.name.toLowerCase();
     const mfr = (p.manufacturer || '').toLowerCase();
@@ -2211,9 +3062,11 @@ function searchProducts(query) {
 function resolveProduct(text) {
   const q = String(text || '').trim().toLowerCase();
   if (!q) return null;
-  return state.products.find(p => p.sku.toLowerCase() === q)
-    || state.products.find(p => productLabel(p).toLowerCase() === q)
-    || state.products.find(p => p.name.toLowerCase() === q)
+  const branch = activeDoc?.branchId || activeBranchId();
+  const list = state.products.filter(p => !branch || branchCarries(p, branch));
+  return list.find(p => p.sku.toLowerCase() === q)
+    || list.find(p => productLabel(p).toLowerCase() === q)
+    || list.find(p => p.name.toLowerCase() === q)
     || null;
 }
 function showSkuPopover(input, matches) {
@@ -2234,7 +3087,7 @@ function showSkuPopover(input, matches) {
         </span>
         <span class="text-right shrink-0">
           <span class="block text-xs font-medium text-slate-700 dark:text-slate-200 tabular-nums">${formatMoney(p.price)}</span>
-          <span class="block text-[11px] ${p.stock <= p.reorderLevel ? 'text-orange-600 dark:text-orange-300' : 'text-slate-400'}">${escapeHtml(stockText(p))}</span>
+          <span class="block text-[11px] ${isLowStock(p) ? 'text-orange-600 dark:text-orange-300' : 'text-slate-400'}">${escapeHtml(stockText(p))}</span>
         </span>
       </button>`).join('');
   }
@@ -2323,6 +3176,51 @@ function fillSubList(section) {
   if (!list) return;
   list.innerHTML = subsFor(section).map(sub => `<option value="${escapeHtml(sub)}"></option>`).join('');
 }
+function stockInputs(record) {
+  const reorder = `<label class="block"><span class="${LABEL}">Reorder</span>
+        <input name="reorderLevel" type="number" placeholder="Reorder" value="${record ? escapeHtml(record.reorderLevel ?? '') : ''}" class="${FIELD}" />
+      </label>`;
+  if (!activeBranchId() && isManager()) {
+    return `<div class="grid grid-cols-2 gap-2">
+      ${BRANCHES.map(item => {
+        const carried = record && branchCarries(record, item.id);
+        const value = carried ? escapeHtml(onHand(record, item.id)) : '';
+        return `<label class="block"><span class="${LABEL}">On hand · ${escapeHtml(item.short)} ${item.id}</span>
+          <input name="stock-${item.id}" type="number" value="${value}" placeholder="Not carried" class="${FIELD}" />
+        </label>`;
+      }).join('')}
+      ${reorder}
+    </div>
+    <p class="text-[11px] text-slate-400 dark:text-slate-500">Leave a branch blank if that house does not carry the SKU. On-hand is per branch.</p>`;
+  }
+  const id = activeBranchId() || session?.branchId || '1000';
+  return `<div class="grid grid-cols-2 gap-2">
+      <label class="block"><span class="${LABEL}">On hand · ${escapeHtml(branchName(id))}</span>
+        <input name="stock" type="number" required value="${record ? escapeHtml(onHand(record, id)) : ''}" class="${FIELD}" />
+      </label>
+      ${reorder}
+    </div>`;
+}
+function writeStockFromForm(product, fd) {
+  product.stockByBranch = { ...(product.stockByBranch || {}) };
+  if (!activeBranchId() && isManager()) {
+    BRANCHES.forEach(item => {
+      const raw = fd.get('stock-' + item.id);
+      const carried = branchCarries(product, item.id);
+      if (raw == null || String(raw).trim() === '') {
+        if (carried) delete product.stockByBranch[item.id];
+        return;
+      }
+      const qty = Number(raw) || 0;
+      if (!carried && qty === 0) return;
+      product.stockByBranch[item.id] = qty;
+    });
+  } else {
+    const id = activeBranchId() || session?.branchId || '1000';
+    product.stockByBranch[id] = Number(fd.get('stock')) || 0;
+  }
+  if (product.stockByBranch['1000'] != null) product.stock = product.stockByBranch['1000'];
+}
 function openProductModal(record) {
   const sections = sectionChoices(record ? productSection(record) : CATALOG[0].section);
   const section = record ? productSection(record) : sections[0];
@@ -2356,10 +3254,7 @@ function openProductModal(record) {
           <input name="cost" type="number" step="0.01" min="0" placeholder="For margin" value="${record && record.cost != null ? escapeHtml(record.cost) : ''}" class="${FIELD}" />
         </label>
       </div>
-      <div class="grid grid-cols-2 gap-2">
-        <input name="stock" type="number" required placeholder="Stock" value="${record ? escapeHtml(record.stock) : ''}" class="${FIELD}" />
-        <input name="reorderLevel" type="number" placeholder="Reorder level" value="${record ? escapeHtml(record.reorderLevel ?? '') : ''}" class="${FIELD}" />
-      </div>
+      ${stockInputs(record)}
       <div class="flex flex-wrap items-center justify-end gap-2 pt-1">
         ${record ? '<button type="button" id="product-delete" class="mr-auto px-3 py-2 text-sm text-rose-600 rounded-lg hover:bg-rose-50 dark:text-rose-300 dark:hover:bg-rose-950/40">Delete</button>' : '<span class="mr-auto"></span>'}
         <button type="button" onclick="closeModal()" class="px-4 py-2 text-sm text-slate-600 rounded-lg hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800">Cancel</button>
@@ -2379,7 +3274,14 @@ function openProductModal(record) {
   }
   const del = document.getElementById('product-delete');
   if (del && record) del.addEventListener('click', () => deleteProduct(record.id));
+  if (!can('edit-product')) {
+    document.querySelectorAll('#product-form input, #product-form select, #product-form textarea, #product-form button').forEach(el => {
+      if (el.getAttribute('onclick') === 'closeModal()') return;
+      el.disabled = true;
+    });
+  }
   document.getElementById('product-form').onsubmit = e => {
+    if (!can('edit-product')) return;
     e.preventDefault();
     const fd = new FormData(e.target);
     const name = String(fd.get('name') || '');
@@ -2395,8 +3297,8 @@ function openProductModal(record) {
     product.uom = String(fd.get('uom') || 'ea');
     product.price = Number(fd.get('price')) || 0;
     product.cost = costRaw === '' ? null : Number(costRaw);
-    product.stock = Number(fd.get('stock')) || 0;
     product.reorderLevel = Number(fd.get('reorderLevel')) || 0;
+    writeStockFromForm(product, fd);
     if (!record) {
       state.products.push(product);
       addActivity(`Added product ${name}`);
@@ -2421,6 +3323,10 @@ function productInUse(id) {
 function deleteProduct(id) {
   const product = productById(id);
   if (!product) return;
+  if (!can('delete')) {
+    deny('Deleting a SKU needs a manager or admin. This demo gate is not server-side security.');
+    return;
+  }
   const refs = productInUse(id);
   if (refs.length) {
     toast('SKU is on a document', refs.slice(0, 3).join(', '), 'warn');
@@ -2435,7 +3341,8 @@ function deleteProduct(id) {
 }
 
 function orderOptions(selected) {
-  const opts = state.orders.map(o =>
+  const branch = activeBranchId();
+  const opts = state.orders.filter(o => !branch || String(o.branchId) === String(branch) || o.id == selected).map(o =>
     `<option value="${escapeHtml(o.id)}" ${o.id == selected ? 'selected' : ''}>${escapeHtml(orderLabel(o))}</option>`
   ).join('');
   const missing = selected && !state.orders.some(o => o.id == selected)
@@ -2511,6 +3418,7 @@ function openDeliveryModal(record, presetOrderId) {
     const prevStatus = record?.status;
     delivery.orderId = fd.get('orderId');
     delivery.contactId = chosen?.contactId || delivery.contactId || '';
+    delivery.branchId = chosen?.branchId || delivery.branchId || writingBranch();
     delivery.shipTo = String(fd.get('shipTo') || '');
     delivery.jobSite = String(fd.get('jobSite') || '');
     delivery.requestedDate = String(fd.get('requestedDate') || '');
@@ -2521,9 +3429,9 @@ function openDeliveryModal(record, presetOrderId) {
     delivery.notes = String(fd.get('notes') || '');
     if (!record) {
       state.deliveries.push(delivery);
-      addActivity(`Scheduled ${delivery.deliveryNumber}`);
+      addActivity(`Scheduled ${delivery.deliveryNumber}`, delivery.branchId);
     } else if (prevStatus && prevStatus !== delivery.status) {
-      addActivity(`${delivery.deliveryNumber} is ${delivery.status}`);
+      addActivity(`${delivery.deliveryNumber} is ${delivery.status}`, delivery.branchId);
     }
     save();
     closeModal();
@@ -2535,6 +3443,10 @@ function openAddDelivery() { openDeliveryModal(null, null); }
 function deleteDelivery(id) {
   const delivery = deliveryById(id);
   if (!delivery) return;
+  if (!can('delete')) {
+    deny('Deleting a delivery needs a manager or admin. This demo gate is not server-side security.');
+    return;
+  }
   if (!confirm(`Delete ${delivery.deliveryNumber}?`)) return;
   state.deliveries = state.deliveries.filter(d => d.id != id);
   save();
@@ -2543,35 +3455,30 @@ function deleteDelivery(id) {
   render();
 }
 
+function quickAddButton(label, icon, action) {
+  return `<button type="button" onclick="${action}" class="w-full text-left px-4 py-3 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-3 text-slate-700 dark:text-slate-200">
+    <i class="fa-solid ${icon} text-primary"></i> ${label}
+  </button>`;
+}
 function openQuickAdd() {
-  openModal('Quick Add', `
-    <div class="space-y-2">
-      <button type="button" onclick="openAddContact()" class="w-full text-left px-4 py-3 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-3 text-slate-700 dark:text-slate-200">
-        <i class="fa-solid fa-user-plus text-primary"></i> New Contact
-      </button>
-      <button type="button" onclick="openAddDeal()" class="w-full text-left px-4 py-3 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-3 text-slate-700 dark:text-slate-200">
-        <i class="fa-solid fa-handshake text-primary"></i> New Deal
-      </button>
-      <button type="button" onclick="openAddQuote()" class="w-full text-left px-4 py-3 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-3 text-slate-700 dark:text-slate-200">
-        <i class="fa-solid fa-file-invoice-dollar text-primary"></i> New Quote
-      </button>
-      <button type="button" onclick="openAddTask()" class="w-full text-left px-4 py-3 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-3 text-slate-700 dark:text-slate-200">
-        <i class="fa-solid fa-check text-primary"></i> New Task
-      </button>
-      <button type="button" onclick="openAddProduct()" class="w-full text-left px-4 py-3 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-3 text-slate-700 dark:text-slate-200">
-        <i class="fa-solid fa-box text-primary"></i> New Product
-      </button>
-      <button type="button" onclick="openAddOrder()" class="w-full text-left px-4 py-3 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-3 text-slate-700 dark:text-slate-200">
-        <i class="fa-solid fa-shopping-cart text-primary"></i> New Order
-      </button>
-      <button type="button" onclick="openAddDelivery()" class="w-full text-left px-4 py-3 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-3 text-slate-700 dark:text-slate-200">
-        <i class="fa-solid fa-truck text-primary"></i> New Delivery
-      </button>
-    </div>
-  `);
+  const items = [
+    can('edit-contact') ? quickAddButton('New Contact', 'fa-user-plus', 'openAddContact()') : '',
+    can('pipeline') ? quickAddButton('New Deal', 'fa-handshake', 'openAddDeal()') : '',
+    can('edit-quote') ? quickAddButton('New Quote', 'fa-file-invoice-dollar', 'openAddQuote()') : '',
+    can('pipeline') ? quickAddButton('New Task', 'fa-check', 'openAddTask()') : '',
+    can('edit-product') ? quickAddButton('New Product', 'fa-box', 'openAddProduct()') : '',
+    can('edit-order') ? quickAddButton('New Order', 'fa-shopping-cart', 'openAddOrder()') : '',
+    can('edit-delivery') ? quickAddButton('New Delivery', 'fa-truck', 'openAddDelivery()') : '',
+  ].filter(Boolean).join('');
+  openModal('Quick Add', `<div class="space-y-2">${items || '<p class="text-sm text-slate-500">Nothing to add for this role.</p>'}</div>`);
 }
 
 function handleAction(action, id) {
+  if (action === 'edit-contact') {
+    const contact = contactById(id);
+    if (contact) openContactModal(contact);
+    return;
+  }
   if (action === 'edit-quote') return openEditQuote(id);
   if (action === 'delete-quote') return deleteQuote(id);
   if (action === 'convert-quote') return convertQuote(id);
@@ -2665,6 +3572,154 @@ function onContentChange(e) {
   }
 }
 
+function renderAudit() {
+  if (!can('audit')) {
+    return `<div class="space-y-4">${pageHeader('Audit log', 'Demo trail')}<div class="${CARD}">${emptyState('fa-clipboard-list', 'Managers only', 'The demo audit log is visible to a manager or admin.')}</div></div>`;
+  }
+  const rows = readAudit().slice().sort((a, b) => String(b.at).localeCompare(String(a.at)));
+  const table = rows.length
+    ? dataTable(
+      ['When', 'Who', 'Action', 'Detail'],
+      rows.map(row => `
+        <tr class="${ROW}">
+          <td class="px-4 py-3 whitespace-nowrap text-slate-500 dark:text-slate-400">${escapeHtml(formatWhen(row.at))}</td>
+          <td class="px-4 py-3">
+            <div class="font-medium text-slate-800 dark:text-slate-100">${escapeHtml(row.userName || '')}</div>
+            <div class="text-xs text-slate-400 dark:text-slate-500">${escapeHtml(ROLE_LABEL[row.role] || row.role || '')}${row.branchId ? ` · ${escapeHtml(row.branchId)}` : ''}</div>
+          </td>
+          <td class="px-4 py-3 whitespace-nowrap">${escapeHtml(row.action || '')}</td>
+          <td class="px-4 py-3 text-slate-600 dark:text-slate-300">${escapeHtml(row.detail || '')}</td>
+        </tr>`).join(''),
+      'min-w-[48rem]'
+    )
+    : `<div class="${CARD}">${emptyState('fa-clipboard-list', 'No audit entries', 'Sign-in, payment changes, refunds, and voids show up here.')}</div>`;
+  return `
+    <div class="space-y-4">
+      ${pageHeader('Audit log', 'Who signed in, and who changed a payment, refund, or void.')}
+      <div class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-100">
+        Demo only. This list lives in localStorage and can be edited or wiped in the browser. It is not a tamper-proof audit table. Production stores the same events in a database the user cannot rewrite. See docs/PRODUCTION.md.
+      </div>
+      ${table}
+    </div>`;
+}
+function paintChrome() {
+  if (!session) return;
+  const name = document.getElementById('session-name');
+  const meta = document.getElementById('session-meta');
+  const avatar = document.getElementById('session-avatar');
+  if (name) name.textContent = session.name;
+  if (meta) meta.textContent = `${ROLE_LABEL[session.role] || session.role} · ${scopeLabel()}`;
+  if (avatar) {
+    avatar.textContent = initials(session.name);
+    avatar.title = `${session.name} · ${ROLE_LABEL[session.role] || session.role} · ${session.branchName} (${session.branchId})`;
+  }
+  const side = document.getElementById('sidebar-session');
+  if (side) {
+    side.innerHTML = `
+      <div class="flex items-center gap-2">
+        ${avatarChip(session.name, 'xs')}
+        <div class="min-w-0">
+          <div class="font-medium text-slate-700 dark:text-slate-200 truncate">${escapeHtml(session.name)}</div>
+          <div class="text-[11px] text-slate-400 dark:text-slate-500 truncate">${escapeHtml(ROLE_LABEL[session.role] || '')} · ${escapeHtml(scopeLabel())}</div>
+        </div>
+      </div>`;
+  }
+  document.querySelectorAll('.sidebar-link').forEach(link => {
+    link.classList.toggle('is-locked', !canView(link.dataset.view));
+  });
+  const wrap = document.getElementById('branch-switch-wrap');
+  const select = document.getElementById('branch-switch');
+  if (wrap && select) {
+    if (can('switch-branch')) {
+      wrap.classList.remove('hidden');
+      const current = session.viewBranch || session.branchId;
+      select.innerHTML = `<option value="all">All branches</option>${BRANCHES.map(branch =>
+        `<option value="${branch.id}">${escapeHtml(branch.name)} · ${branch.id}</option>`
+      ).join('')}`;
+      select.value = current;
+    } else {
+      wrap.classList.add('hidden');
+    }
+  }
+}
+function showLogin(notice) {
+  const login = document.getElementById('login-screen');
+  const app = document.getElementById('app-shell');
+  if (login) login.classList.remove('is-off');
+  if (app) {
+    app.classList.remove('is-on');
+    app.setAttribute('inert', '');
+  }
+  const note = document.getElementById('login-notice');
+  if (note) {
+    note.textContent = notice || '';
+    note.classList.toggle('hidden', !notice);
+  }
+}
+function enterApp() {
+  const login = document.getElementById('login-screen');
+  const app = document.getElementById('app-shell');
+  if (login) login.classList.add('is-off');
+  if (app) {
+    app.classList.add('is-on');
+    app.removeAttribute('inert');
+  }
+  paintChrome();
+  if (!canView(state.currentView)) state.currentView = 'dashboard';
+  render();
+  armIdle();
+}
+function signOut(reason) {
+  if (session) {
+    if (reason === 'timeout') audit('timeout', `${session.name} signed out after 15 minutes of inactivity`);
+    else audit('logout', `${session.name} signed out`);
+  }
+  clearInterval(idleTimer);
+  session = null;
+  localStorage.removeItem(SESSION_KEY);
+  closeModal();
+  showLogin(reason === 'timeout'
+    ? 'You were signed out after 15 minutes without activity. That timeout lives in this browser only — it is not a server session.'
+    : '');
+}
+function noteActivity() {
+  if (!session) return;
+  const now = Date.now();
+  if (now - Number(session.lastActivity || 0) > IDLE_MS) {
+    signOut('timeout');
+    return;
+  }
+  session.lastActivity = now;
+  if (now - lastSessionWrite > 15000) {
+    lastSessionWrite = now;
+    saveSession();
+  }
+}
+function armIdle() {
+  clearInterval(idleTimer);
+  idleTimer = setInterval(() => {
+    if (session && Date.now() - Number(session.lastActivity || 0) > IDLE_MS) signOut('timeout');
+  }, 20000);
+}
+function boot() {
+  const stored = readStoredSession();
+  if (stored && sessionStale(stored)) {
+    session = stored;
+    audit('timeout', `${stored.name} signed out after 15 minutes of inactivity`);
+    session = null;
+    localStorage.removeItem(SESSION_KEY);
+    showLogin('You were signed out after 15 minutes without activity. That timeout lives in this browser only — it is not a server session.');
+    return;
+  }
+  if (stored) {
+    session = stored;
+    session.lastActivity = Date.now();
+    saveSession();
+    enterApp();
+    return;
+  }
+  showLogin('');
+}
 function initShell() {
   initTheme();
   document.getElementById('menu-toggle').addEventListener('click', () => {
@@ -2740,6 +3795,54 @@ function initShell() {
     }
     if (document.getElementById('sidebar').classList.contains('is-open')) closeSidebar(true);
   });
+
+  document.getElementById('sign-out').addEventListener('click', () => signOut('logout'));
+  const branchSelect = document.getElementById('branch-switch');
+  if (branchSelect) {
+    branchSelect.addEventListener('change', () => {
+      if (!session || !can('switch-branch')) return;
+      session.viewBranch = branchSelect.value;
+      saveSession();
+      audit('branch-switch', `${session.name} is viewing ${scopeLabel()}`);
+      paintChrome();
+      render();
+    });
+  }
+  document.getElementById('login-form').addEventListener('submit', e => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const username = String(fd.get('username') || '').trim().toLowerCase();
+    const password = String(fd.get('password') || '');
+    const user = DEMO_USERS.find(item => item.username === username);
+    const err = document.getElementById('login-error');
+    if (!user || password !== DEMO_PASSWORD) {
+      if (err) {
+        err.textContent = 'That username and password don’t match a demo account. The shared demo password is pulse.';
+        err.classList.remove('hidden');
+      }
+      return;
+    }
+    if (err) {
+      err.textContent = '';
+      err.classList.add('hidden');
+    }
+    const branch = branchById(user.branchId);
+    session = {
+      userId: user.id,
+      username: user.username,
+      name: user.name,
+      role: user.role,
+      branchId: user.branchId,
+      branchName: branch ? branch.name : '',
+      viewBranch: user.branchId,
+      loggedInAt: Date.now(),
+      lastActivity: Date.now(),
+    };
+    saveSession();
+    audit('login', `${session.name} (${session.username}) signed in as ${ROLE_LABEL[session.role]} at ${session.branchName} (${session.branchId})`);
+    enterApp();
+  });
+  ['pointerdown', 'keydown'].forEach(type => document.addEventListener(type, noteActivity, { passive: true }));
 }
 
 window.openAddContact = openAddContact;
@@ -2752,4 +3855,4 @@ window.openAddDelivery = openAddDelivery;
 
 initShell();
 load();
-render();
+boot();

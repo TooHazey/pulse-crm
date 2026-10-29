@@ -4,10 +4,22 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>PULSE — Marshall E. Campbell · Electrical Distribution</title>
+  <script>
+    (function () {
+      try {
+        var stored = localStorage.getItem('pulse-theme');
+        var systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        if (stored === 'dark' || (stored !== 'light' && systemDark)) {
+          document.documentElement.classList.add('dark');
+        }
+      } catch (e) {}
+    })();
+  </script>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
   <script>
     tailwind.config = {
+      darkMode: 'class',
       theme: {
         extend: {
           colors: {
@@ -19,91 +31,165 @@
     }
   </script>
   <style>
-    .kanban-card { cursor: grab; transition: all 0.15s; }
-    .kanban-card:active { cursor: grabbing; }
-    .kanban-column.drag-over { background: #eff6ff; border-color: #3b82f6; }
-    .sidebar-link.active { background: #eff6ff; color: #2563eb; font-weight: 600; }
+    html { color-scheme: light; }
+    html.dark { color-scheme: dark; }
+
+    .sidebar-drawer {
+      transform: translateX(calc(-100% - 1rem));
+      transition: transform 0.2s ease;
+    }
+    .sidebar-drawer.is-open { transform: translateX(0); }
+    @media (min-width: 1024px) {
+      .sidebar-drawer,
+      .sidebar-drawer.is-open { transform: none; }
+    }
+
+    .sidebar-link { color: #475569; }
     .sidebar-link:hover { background: #f8fafc; }
+    .sidebar-link.active { background: #eff6ff; color: #2563eb; font-weight: 600; }
+    .sidebar-link.active:hover { background: #dbeafe; }
+    .dark .sidebar-link { color: #cbd5e1; }
+    .dark .sidebar-link:hover { background: #1e293b; }
+    .dark .sidebar-link.active { background: rgba(37, 99, 235, 0.2); color: #93c5fd; }
+    .dark .sidebar-link.active:hover { background: rgba(37, 99, 235, 0.3); }
+
+    .kanban-card {
+      cursor: grab;
+      transition: transform 0.18s ease, box-shadow 0.18s ease, opacity 0.15s ease;
+    }
+    .kanban-card:active { cursor: grabbing; }
+    .kanban-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 24px -14px rgb(15 23 42 / 0.28);
+    }
+    .dark .kanban-card:hover { box-shadow: 0 10px 24px -14px rgb(0 0 0 / 0.55); }
+    .kanban-column.drag-over { box-shadow: inset 0 0 0 2px #3b82f6; }
+
+    .lift-card { transition: transform 0.18s ease, box-shadow 0.18s ease; }
+    .lift-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 24px -14px rgb(15 23 42 / 0.22);
+    }
+    .dark .lift-card:hover { box-shadow: 0 12px 28px -16px rgb(0 0 0 / 0.6); }
+
+    .toast-item {
+      opacity: 1;
+      transform: translateY(0);
+      animation: toast-in 0.2s ease;
+    }
+    .toast-item.toast-out {
+      animation: none;
+      opacity: 0;
+      transform: translateY(6px);
+      transition: opacity 0.2s ease, transform 0.2s ease;
+    }
+    @keyframes toast-in {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+      }
+      .lift-card:hover,
+      .kanban-card:hover { transform: none; }
+    }
   </style>
 </head>
-<body class="bg-slate-50 text-slate-800 h-screen flex overflow-hidden">
+<body class="bg-slate-50 text-slate-800 antialiased h-screen flex overflow-hidden dark:bg-slate-950 dark:text-slate-100">
+  <div id="sidebar-backdrop" class="fixed inset-0 z-40 bg-slate-900/40 dark:bg-black/60 hidden lg:hidden"></div>
+
   <!-- Sidebar -->
-  <aside class="w-64 bg-white border-r border-slate-200 flex flex-col">
-    <div class="p-6 border-b border-slate-100">
-      <div class="flex items-center gap-3">
-        <div class="w-9 h-9 bg-primary rounded-xl flex items-center justify-center text-white font-bold text-lg">P</div>
-        <div>
+  <aside id="sidebar" class="sidebar-drawer fixed inset-y-0 left-0 z-50 w-64 max-w-[85vw] bg-white border-r border-slate-200 flex flex-col dark:bg-slate-900 dark:border-slate-800 lg:static lg:z-auto lg:max-w-none">
+    <div class="p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3">
+      <div class="flex items-center gap-3 min-w-0">
+        <div class="w-9 h-9 bg-primary rounded-xl flex items-center justify-center text-white font-bold text-lg shrink-0">P</div>
+        <div class="min-w-0">
           <h1 class="font-bold text-lg leading-tight">PULSE</h1>
-          <p class="text-xs text-slate-500 leading-tight">Marshall E. Campbell</p>
-          <p class="text-[11px] text-slate-400">Electrical · MRO · Automation</p>
+          <p class="text-xs text-slate-500 dark:text-slate-300 leading-tight truncate">Marshall E. Campbell</p>
+          <p class="text-[11px] text-slate-400 dark:text-slate-500 truncate">Electrical · MRO · Automation</p>
         </div>
       </div>
+      <button id="sidebar-close" type="button" class="lg:hidden w-8 h-8 shrink-0 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 dark:hover:text-slate-200" aria-label="Close menu">
+        <i class="fa-solid fa-times"></i>
+      </button>
     </div>
-    <nav class="flex-1 p-3 space-y-1">
+    <nav class="flex-1 p-3 space-y-1 overflow-y-auto">
       <a href="#" data-view="dashboard" class="sidebar-link active flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm">
-        <i class="fa-solid fa-chart-pie w-5"></i> Dashboard
+        <i class="fa-solid fa-chart-pie w-5 text-center"></i> Dashboard
       </a>
       <a href="#" data-view="pipeline" class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm">
-        <i class="fa-solid fa-columns w-5"></i> Pipeline
+        <i class="fa-solid fa-columns w-5 text-center"></i> Pipeline
       </a>
       <a href="#" data-view="contacts" class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm">
-        <i class="fa-solid fa-users w-5"></i> Contacts
+        <i class="fa-solid fa-users w-5 text-center"></i> Contacts
       </a>
       <a href="#" data-view="tasks" class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm">
-        <i class="fa-solid fa-check-square w-5"></i> Tasks
+        <i class="fa-solid fa-check-square w-5 text-center"></i> Tasks
       </a>
       <a href="#" data-view="products" class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm">
-        <i class="fa-solid fa-box w-5"></i> Products
+        <i class="fa-solid fa-box w-5 text-center"></i> Products
       </a>
       <a href="#" data-view="orders" class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm">
-        <i class="fa-solid fa-shopping-cart w-5"></i> Orders
+        <i class="fa-solid fa-shopping-cart w-5 text-center"></i> Orders
       </a>
     </nav>
-    <div class="p-4 border-t border-slate-100 text-xs text-slate-400 leading-relaxed">
+    <div class="p-4 border-t border-slate-100 dark:border-slate-800 text-xs text-slate-400 dark:text-slate-500 leading-relaxed">
       Demo prototype for distributor sales<br>
       Port Huron · Livonia · Saginaw
     </div>
   </aside>
 
   <!-- Main -->
-  <main class="flex-1 flex flex-col overflow-hidden">
-    <!-- Top bar -->
-    <header class="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6">
-      <div class="flex items-center gap-4 flex-1 max-w-xl">
-        <div class="relative flex-1">
-          <i class="fa-solid fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
-          <input id="global-search" type="text" placeholder="Search accounts, quotes, SKUs, orders..." 
-                 class="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" />
-        </div>
+  <main class="flex-1 flex flex-col overflow-hidden min-w-0">
+    <header class="h-16 bg-white border-b border-slate-200 flex items-center gap-2 sm:gap-3 px-3 sm:px-6 dark:bg-slate-900 dark:border-slate-800">
+      <button id="menu-toggle" type="button" class="lg:hidden w-9 h-9 shrink-0 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800 flex items-center justify-center" aria-label="Open menu" aria-controls="sidebar" aria-expanded="false">
+        <i class="fa-solid fa-bars"></i>
+      </button>
+      <div class="relative flex-1 min-w-0 max-w-xl">
+        <i class="fa-solid fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm pointer-events-none"></i>
+        <input id="global-search" type="text" placeholder="Search accounts, quotes, SKUs, orders..."
+               class="w-full pl-10 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary dark:bg-slate-800 dark:border-slate-700 dark:text-slate-100 dark:placeholder:text-slate-500" />
       </div>
-      <div class="flex items-center gap-3">
-        <button id="quick-add" class="bg-primary hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg flex items-center gap-2">
-          <i class="fa-solid fa-plus"></i> Quick Add
-        </button>
-        <div class="text-right leading-tight hidden sm:block">
-          <div class="text-xs font-medium text-slate-700">Inside Sales</div>
-          <div class="text-[11px] text-slate-400">Port Huron counter</div>
-        </div>
-        <div class="w-9 h-9 bg-slate-200 rounded-full flex items-center justify-center text-sm font-medium" title="Inside sales, Port Huron">PH</div>
+      <button id="theme-toggle" type="button" aria-label="Toggle color theme" class="w-9 h-9 shrink-0 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100 flex items-center justify-center">
+        <i class="fa-solid fa-moon dark:hidden"></i>
+        <i class="fa-solid fa-sun hidden dark:inline-block"></i>
+      </button>
+      <button id="quick-add" type="button" class="bg-primary hover:bg-blue-700 text-white text-sm font-medium px-3 sm:px-4 py-2 rounded-lg flex items-center gap-2 shrink-0">
+        <i class="fa-solid fa-plus"></i>
+        <span class="hidden sm:inline">Quick Add</span>
+      </button>
+      <div class="hidden lg:block text-right leading-tight shrink-0">
+        <div class="text-xs font-medium text-slate-700 dark:text-slate-200">Inside Sales</div>
+        <div class="text-[11px] text-slate-400 dark:text-slate-500">Port Huron counter</div>
       </div>
+      <div class="w-9 h-9 bg-slate-200 rounded-full hidden sm:flex items-center justify-center text-sm font-medium text-slate-700 shrink-0 dark:bg-slate-700 dark:text-slate-100" title="Inside sales, Port Huron">PH</div>
     </header>
 
-    <!-- Content area -->
-    <div id="content" class="flex-1 overflow-auto p-6">
-      <!-- Views injected here -->
-    </div>
+    <div id="content" class="flex-1 overflow-auto p-4 sm:p-6 min-w-0"></div>
   </main>
 
-  <!-- Quick Add Modal -->
-  <div id="modal" class="fixed inset-0 bg-black/40 hidden items-center justify-center z-50">
-    <div class="bg-white rounded-2xl shadow-xl w-full max-w-md mx-4">
-      <div class="p-5 border-b flex justify-between items-center">
-        <h3 id="modal-title" class="font-semibold">Add New</h3>
-        <button onclick="closeModal()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-times"></i></button>
+  <!-- Modal -->
+  <div id="modal" class="fixed inset-0 z-[70] hidden" aria-hidden="true">
+    <div id="modal-backdrop" class="absolute inset-0 bg-slate-900/40 dark:bg-black/60 opacity-0 transition-opacity duration-200 ease-out"></div>
+    <div class="relative h-full flex items-center justify-center p-4 pointer-events-none">
+      <div id="modal-panel" role="dialog" aria-modal="true" aria-labelledby="modal-title" class="pointer-events-auto bg-white dark:bg-slate-900 dark:text-slate-100 rounded-2xl shadow-xl w-full max-w-md border border-transparent dark:border-slate-800 opacity-0 scale-95 transition duration-200 ease-out">
+        <div class="p-5 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center gap-3">
+          <h3 id="modal-title" class="font-semibold">Add New</h3>
+          <button id="modal-close" type="button" class="w-8 h-8 shrink-0 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 dark:hover:text-slate-200" aria-label="Close">
+            <i class="fa-solid fa-times"></i>
+          </button>
+        </div>
+        <div id="modal-body" class="p-5"></div>
       </div>
-      <div id="modal-body" class="p-5"></div>
     </div>
   </div>
+
+  <div id="toasts" class="fixed z-[80] top-20 right-4 left-4 sm:left-auto sm:w-80 flex flex-col gap-2 pointer-events-none" aria-live="polite" aria-relevant="additions"></div>
 
   <script src="app.js"></script>
 </body>

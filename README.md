@@ -6,7 +6,7 @@ The sample book is inspired by [Marshall E. Campbell Company](https://www.mecamp
 
 ## Sample data
 
-Opening the app seeds `localStorage` key `pulse-crm` (contacts, deals, tasks, activities, products, orders). A separate flag, `pulse-crm-seed-version`, is set to `2`. If an older install has `pulse-crm` without that flag (or with a lower version), the next load replaces the sample book once and writes the flag. Edits made after that stay put until the version is bumped again. The theme key `pulse-theme` is not used.
+Opening the app seeds `localStorage` key `pulse-crm` (contacts, deals, tasks, activities, products, orders). A separate flag, `pulse-crm-seed-version`, is set to `2`. If an older install has `pulse-crm` without that flag (or with a lower version), the next load replaces the sample book once and writes the flag. Edits made after that stay put until the version is bumped again. The theme key `pulse-theme` is separate and is not reset by the reseed.
 
 ## Features
 - **Dashboard** — Pipeline, revenue, tasks, low-stock alerts, open orders

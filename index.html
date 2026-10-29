@@ -72,6 +72,11 @@
     }
     .dark .lift-card:hover { box-shadow: 0 12px 28px -16px rgb(0 0 0 / 0.6); }
 
+    #sku-popover .sku-opt:hover { background: #f8fafc; }
+    html.dark #sku-popover .sku-opt:hover { background: #1e293b; }
+    #sku-popover .sku-opt.is-active { background: #eff6ff; }
+    html.dark #sku-popover .sku-opt.is-active { background: rgba(30, 58, 138, 0.45); }
+
     .toast-item {
       opacity: 1;
       transform: translateY(0);
@@ -125,6 +130,9 @@
       <a href="#" data-view="pipeline" class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm">
         <i class="fa-solid fa-columns w-5 text-center"></i> Pipeline
       </a>
+      <a href="#" data-view="quotes" class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm">
+        <i class="fa-solid fa-file-invoice-dollar w-5 text-center"></i> Quotes
+      </a>
       <a href="#" data-view="contacts" class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm">
         <i class="fa-solid fa-users w-5 text-center"></i> Contacts
       </a>
@@ -136,6 +144,9 @@
       </a>
       <a href="#" data-view="orders" class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm">
         <i class="fa-solid fa-shopping-cart w-5 text-center"></i> Orders
+      </a>
+      <a href="#" data-view="deliveries" class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm">
+        <i class="fa-solid fa-truck w-5 text-center"></i> Deliveries
       </a>
     </nav>
     <div class="p-4 border-t border-slate-100 dark:border-slate-800 text-xs text-slate-400 dark:text-slate-500 leading-relaxed">
@@ -152,7 +163,7 @@
       </button>
       <div class="relative flex-1 min-w-0 max-w-xl">
         <i class="fa-solid fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm pointer-events-none"></i>
-        <input id="global-search" type="text" placeholder="Search accounts, quotes, SKUs, orders..."
+        <input id="global-search" type="text" placeholder="Search accounts, quotes, SKUs, orders, jobs..."
                class="w-full pl-10 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary dark:bg-slate-800 dark:border-slate-700 dark:text-slate-100 dark:placeholder:text-slate-500" />
       </div>
       <button id="theme-toggle" type="button" aria-label="Toggle color theme" class="w-9 h-9 shrink-0 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100 flex items-center justify-center">
@@ -177,19 +188,20 @@
   <div id="modal" class="fixed inset-0 z-[70] hidden" aria-hidden="true">
     <div id="modal-backdrop" class="absolute inset-0 bg-slate-900/40 dark:bg-black/60 opacity-0 transition-opacity duration-200 ease-out"></div>
     <div class="relative h-full flex items-center justify-center p-4 pointer-events-none">
-      <div id="modal-panel" role="dialog" aria-modal="true" aria-labelledby="modal-title" class="pointer-events-auto bg-white dark:bg-slate-900 dark:text-slate-100 rounded-2xl shadow-xl w-full max-w-md border border-transparent dark:border-slate-800 opacity-0 scale-95 transition duration-200 ease-out">
-        <div class="p-5 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center gap-3">
+      <div id="modal-panel" role="dialog" aria-modal="true" aria-labelledby="modal-title" class="pointer-events-auto bg-white dark:bg-slate-900 dark:text-slate-100 rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] min-h-0 flex flex-col overflow-hidden border border-transparent dark:border-slate-800 opacity-0 scale-95 transition duration-200 ease-out">
+        <div class="p-5 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center gap-3 shrink-0">
           <h3 id="modal-title" class="font-semibold">Add New</h3>
           <button id="modal-close" type="button" class="w-8 h-8 shrink-0 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 dark:hover:text-slate-200" aria-label="Close">
             <i class="fa-solid fa-times"></i>
           </button>
         </div>
-        <div id="modal-body" class="p-5"></div>
+        <div id="modal-body" class="p-5 overflow-y-auto max-h-[calc(90vh-4.5rem)]"></div>
       </div>
     </div>
   </div>
 
-  <div id="toasts" class="fixed z-[80] top-20 right-4 left-4 sm:left-auto sm:w-80 flex flex-col gap-2 pointer-events-none" aria-live="polite" aria-relevant="additions"></div>
+  <div id="toasts" class="fixed z-[60] bottom-4 left-1/2 -translate-x-1/2 w-[min(20rem,calc(100%-2rem))] flex flex-col gap-2 pointer-events-none" aria-live="polite" aria-relevant="additions"></div>
+  <div id="sku-popover" class="fixed z-[90] hidden max-h-72 overflow-auto rounded-xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900" role="listbox"></div>
 
   <script src="app.js"></script>
 </body>

@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PULSE — Sales, Inventory & Orders</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: '#2563eb',
+            'primary-light': '#dbeafe',
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    .kanban-card { cursor: grab; transition: all 0.15s; }
+    .kanban-card:active { cursor: grabbing; }
+    .kanban-column.drag-over { background: #eff6ff; border-color: #3b82f6; }
+    .sidebar-link.active { background: #eff6ff; color: #2563eb; font-weight: 600; }
+    .sidebar-link:hover { background: #f8fafc; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 h-screen flex overflow-hidden">
+  <!-- Sidebar -->
+  <aside class="w-64 bg-white border-r border-slate-200 flex flex-col">
+    <div class="p-6 border-b border-slate-100">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 bg-primary rounded-xl flex items-center justify-center text-white font-bold text-lg">P</div>
+        <div>
+          <h1 class="font-bold text-lg leading-tight">PULSE</h1>
+          <p class="text-xs text-slate-400">Sales · Inventory · Orders</p>
+        </div>
+      </div>
+    </div>
+    <nav class="flex-1 p-3 space-y-1">
+      <a href="#" data-view="dashboard" class="sidebar-link active flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm">
+        <i class="fa-solid fa-chart-pie w-5"></i> Dashboard
+      </a>
+      <a href="#" data-view="pipeline" class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm">
+        <i class="fa-solid fa-columns w-5"></i> Pipeline
+      </a>
+      <a href="#" data-view="contacts" class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm">
+        <i class="fa-solid fa-users w-5"></i> Contacts
+      </a>
+      <a href="#" data-view="tasks" class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm">
+        <i class="fa-solid fa-check-square w-5"></i> Tasks
+      </a>
+      <a href="#" data-view="products" class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm">
+        <i class="fa-solid fa-box w-5"></i> Products
+      </a>
+      <a href="#" data-view="orders" class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm">
+        <i class="fa-solid fa-shopping-cart w-5"></i> Orders
+      </a>
+    </nav>
+    <div class="p-4 border-t border-slate-100 text-xs text-slate-400">
+      Clean · Fast · On the pulse
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <main class="flex-1 flex flex-col overflow-hidden">
+    <!-- Top bar -->
+    <header class="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6">
+      <div class="flex items-center gap-4 flex-1 max-w-xl">
+        <div class="relative flex-1">
+          <i class="fa-solid fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
+          <input id="global-search" type="text" placeholder="Search contacts, deals, products, orders..." 
+                 class="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" />
+        </div>
+      </div>
+      <div class="flex items-center gap-3">
+        <button id="quick-add" class="bg-primary hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg flex items-center gap-2">
+          <i class="fa-solid fa-plus"></i> Quick Add
+        </button>
+        <div class="w-9 h-9 bg-slate-200 rounded-full flex items-center justify-center text-sm font-medium">RD</div>
+      </div>
+    </header>
+
+    <!-- Content area -->
+    <div id="content" class="flex-1 overflow-auto p-6">
+      <!-- Views injected here -->
+    </div>
+  </main>
+
+  <!-- Quick Add Modal -->
+  <div id="modal" class="fixed inset-0 bg-black/40 hidden items-center justify-center z-50">
+    <div class="bg-white rounded-2xl shadow-xl w-full max-w-md mx-4">
+      <div class="p-5 border-b flex justify-between items-center">
+        <h3 id="modal-title" class="font-semibold">Add New</h3>
+        <button onclick="closeModal()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-times"></i></button>
+      </div>
+      <div id="modal-body" class="p-5"></div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
